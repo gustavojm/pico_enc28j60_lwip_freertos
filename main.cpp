@@ -9,25 +9,32 @@
 #include "spi.h"
 #include "utils.h"
 
+#include "pico/cyw43_arch.h"
+
+
 #if !NO_SYS
 void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
 #endif
 
-constexpr uint8_t MISO_PIN = 4;
-constexpr uint8_t MOSI_PIN = 3;
-constexpr uint8_t CLK_PIN = 2;
-constexpr uint8_t ENC_IRQ = 15;
-constexpr uint8_t LED_PIN = 25;
+constexpr uint8_t MISO_PIN = 16;
+constexpr uint8_t MOSI_PIN = 19;
+constexpr uint8_t CLK_PIN = 18;
+constexpr uint8_t ENC_IRQ = 22;
+//constexpr uint8_t LED_PIN = 25;
 
-drivers::gpio::Gpio EncRstPin{0, GPIO_OUT};
-drivers::gpio::Gpio EncCsPin{1, GPIO_OUT};
+drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
+drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
 drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
 drivers::spi::SpiWrapper spi0_{spi0Config};
 
 drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, spi0_};
 drivers::enc28j60::enc28j60 eth_driver{EncConfig};
 
-drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
+//drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
+
+#include "tcp_server_command.h"
+
+tcp_server_command cmd_server(456);
 
 void main_task(void *params) {
     if (not eth_driver.init(mac)) {
@@ -37,18 +44,20 @@ void main_task(void *params) {
     while (not eth_driver.is_link_up())
         ;
 
-    if (enc_driver_os_init() != ERR_OK) {
-        hal::panic();
-    }
+    enc_driver_os_init();
+    
 
-    if (enc_driver_lwip_init(eth_driver) != ERR_OK) {
-        hal::panic();
-    }
+    enc_driver_lwip_init(eth_driver);
+
+    cmd_server.start();
+
 
     while (true) {
-        BoardLed.set();
+        //BoardLed.set();
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
         vTaskDelay(100);
-        BoardLed.reset();
+        //BoardLed.reset();
+        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
         vTaskDelay(100);
     }
 }
@@ -58,7 +67,11 @@ int main() {
 
     EncRstPin.init();
     EncCsPin.init();
-    BoardLed.init();
+    //BoardLed.init();
+    if (cyw43_arch_init()) {
+        printf("Wi-Fi init failed");
+        return -1;
+    }
     spi0_.init();
 
     TaskHandle_t task{};

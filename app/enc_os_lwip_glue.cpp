@@ -148,11 +148,25 @@ err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
     vTaskCoreAffinitySet(task_handle, 1 << portGET_CORE_ID());
 #endif
 
-    if (netif_add(&net_if, IP4_ADDR_ANY, IP4_ADDR_ANY, IP4_ADDR_ANY,
+// Define your IP address, netmask, and gateway
+#define IP_ADDR   "10.30.113.199"
+#define NETMASK   "255.255.255.0"
+#define GATEWAY   "10.30.113.1"
+
+   ip4_addr_t ipaddr, netmask, gw;
+
+    // Convert IP strings to ip4_addr_t
+    IP4_ADDR(&ipaddr, 10, 30, 113, 199);
+    IP4_ADDR(&netmask, 255, 255, 255, 0);
+    IP4_ADDR(&gw, 10, 30, 113, 1);
+
+    if (netif_add(&net_if, &ipaddr, &netmask, &gw,
                   static_cast<void *>(&eth_driver), enc_eth_netif_init, tcpip_input) == nullptr) {
         printf("netif_add failed\n");
         return ERR_ABRT;
     }
+
+    printf("netif_add ADDED\n");
 
     net_if.name[0] = 'e';
     net_if.name[1] = '0';
@@ -163,7 +177,9 @@ err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
 
     netif_set_default(&net_if);
     netif_set_up(&net_if);
-    dhcp_start(&net_if);
+    //dhcp_start(&net_if);
+
+    printf("netif DHCP STARTED\n");
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1
     vTaskCoreAffinitySet(task_handle, affinity);

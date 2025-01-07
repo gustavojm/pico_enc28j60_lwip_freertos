@@ -56,12 +56,19 @@
 #define TCPIP_MBOX_SIZE 8
 #define LWIP_TIMEVAL_PRIVATE 0
 
-// not necessary, can be done either way
-#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
-#endif
+#define DEFAULT_UDP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
+#define DEFAULT_TCP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
+#define DEFAULT_ACCEPTMBOX_SIZE TCPIP_MBOX_SIZE
 
 // not necessary, can be done either way
-#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 0
+#endif
+
+/* Threading options */
+#define LWIP_TCPIP_CORE_LOCKING   0
+
+// not necessary, can be done either way
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 0
 #define SYS_LIGHTWEIGHT_PROT 1
 #define LWIP_PROVIDE_ERRNO 1
 
