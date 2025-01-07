@@ -20,13 +20,14 @@
 #define LWIP_ICMP 1
 #define LWIP_RAW 1
 #define TCP_WND (8 * TCP_MSS)
-#define TCP_MSS 1460
+//#define TCP_MSS 1460
+#define TCP_MSS 1440
 #define TCP_SND_BUF (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
 #define LWIP_NETIF_STATUS_CALLBACK 1
 #define LWIP_NETIF_LINK_CALLBACK 1
 #define LWIP_NETIF_HOSTNAME 1
-#define LWIP_NETCONN 0
+#define LWIP_NETCONN 1
 #define MEM_STATS 0
 #define SYS_STATS 0
 #define MEMP_STATS 0
@@ -50,18 +51,25 @@
 #endif
 
 #if !NO_SYS
-#define TCPIP_THREAD_STACKSIZE 1024
+#define TCPIP_THREAD_STACKSIZE 2 * 1024
 #define DEFAULT_THREAD_STACKSIZE 1024
 #define DEFAULT_RAW_RECVMBOX_SIZE 8
 #define TCPIP_MBOX_SIZE 8
 #define LWIP_TIMEVAL_PRIVATE 0
 
-// not necessary, can be done either way
-#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
-#endif
+#define DEFAULT_UDP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
+#define DEFAULT_TCP_RECVMBOX_SIZE TCPIP_MBOX_SIZE
+#define DEFAULT_ACCEPTMBOX_SIZE TCPIP_MBOX_SIZE
 
 // not necessary, can be done either way
-#define LWIP_TCPIP_CORE_LOCKING_INPUT 1
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 0
+#endif
+
+/* Threading options */
+#define LWIP_TCPIP_CORE_LOCKING   0
+
+// not necessary, can be done either way
+#define LWIP_TCPIP_CORE_LOCKING_INPUT 0
 #define SYS_LIGHTWEIGHT_PROT 1
 #define LWIP_PROVIDE_ERRNO 1
 
@@ -93,5 +101,11 @@
 #define PPP_DEBUG LWIP_DBG_OFF
 #define SLIP_DEBUG LWIP_DBG_OFF
 #define DHCP_DEBUG LWIP_DBG_OFF
+
+#define HTTPD_DEBUG LWIP_DBG_OFF
+
+#define IP_REASSEMBLY   1       // for input packets
+#define IP_FRAG         1       // for output packets
+#define MEMP_NUM_TCPIP_MSG_INPKT    80
 
 #endif /* __LWIPOPTS_H__ */

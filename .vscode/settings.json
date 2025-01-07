@@ -1,0 +1,19 @@
+{
+    "cortex-debug.armToolchainPath": "/usr/local/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin",
+    "cortex-debug.openocdPath": "/home/gustavo/pico/openocd/src/openocd",
+    "cortex-debug.gdbPath": "/usr/local/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gdb",
+    "cortex-debug.gdbPath.linux": "/usr/local/arm-gnu-toolchain-12.3.rel1-x86_64-arm-none-eabi/bin/arm-none-eabi-gdb",
+    "files.associations": {
+        "*.ipp": "cpp",
+        "*.tcc": "cpp",
+        "bitset": "cpp",
+        "cstdlib": "cpp",
+        "regex": "cpp",
+        "mutex": "cpp",
+        "httpd_structs.h": "c",
+        "random": "cpp",
+        "future": "cpp",
+        "ostream": "cpp",
+        "sys.h": "c"
+    },
+}
