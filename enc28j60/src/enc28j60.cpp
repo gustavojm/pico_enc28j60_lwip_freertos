@@ -198,12 +198,11 @@ void enc28j60::write_buff(const uint8_t *src, size_t len) {
 uint8_t enc28j60::get_number_of_packets() { return read_reg(EPKTCNT); }
 
 size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
-                                     const size_t max_length) {
-    const size_t bytes_to_be_received = info.byte_count > max_length ? max_length : info.byte_count;
-    size_t bytes_read = 0;
+                                     const size_t length) {
 
+    size_t bytes_read;
     if (dst != nullptr) {
-        bytes_read = read_buff(dst, bytes_to_be_received);
+        bytes_read = read_buff(dst, length);
     }
 
     next_packet_pointer = info.next_packet_pointer;

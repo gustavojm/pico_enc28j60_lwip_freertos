@@ -23,7 +23,6 @@
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 constexpr size_t ETHERNET_MTU = 1500;
 
-std::array<uint8_t, ETHERNET_MTU> ethernet_frame_buffer{};
 static netif net_if{};
 static SemaphoreHandle_t worker_sem{};
 
@@ -84,24 +83,13 @@ static void enc_worker_thread(void *param) {
         while (eth_driver.get_number_of_packets() > 0) {
             auto packet_info = eth_driver.get_incoming_packet_info();
 
-            uint8_t *tmp = static_cast<uint8_t *>(malloc(packet_info.byte_count));
-            if (tmp == nullptr) {
-                printf("ERROR: mem not enoug");
-            }
-
-            auto bytes_received = eth_driver.get_incoming_packet(
-                packet_info, tmp, packet_info.byte_count);
-
-
-            ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_POOL);
+            ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
             if (ptr != nullptr) {
-                pbuf_take(ptr, tmp,
-                          packet_info.byte_count);
-                free(tmp);
+                eth_driver.get_incoming_packet(packet_info, (uint8_t *)ptr->payload, packet_info.byte_count);
 
                 LINK_STATS_INC(link.recv);
 #ifdef ENC_DEBUG_ON
-                printf("Received packet with len %d[%d]!\r\n", bytes_received,
+                printf("Received packet with len %d!\r\n", 
                        packet_info.byte_count);
 #endif
 
@@ -109,10 +97,8 @@ static void enc_worker_thread(void *param) {
                     printf("Error processing frame input\r\n");
                     pbuf_free(ptr);
                 }
-                ptr = nullptr;
+                
             }
-
-            ethernet_frame_buffer.fill(0);
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
