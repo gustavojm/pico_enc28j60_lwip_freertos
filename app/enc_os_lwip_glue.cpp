@@ -83,12 +83,21 @@ static void enc_worker_thread(void *param) {
 
         while (eth_driver.get_number_of_packets() > 0) {
             auto packet_info = eth_driver.get_incoming_packet_info();
+
+            uint8_t *tmp = static_cast<uint8_t *>(malloc(packet_info.byte_count));
+            if (tmp == nullptr) {
+                printf("ERROR: mem not enoug");
+            }
+
             auto bytes_received = eth_driver.get_incoming_packet(
-                packet_info, ethernet_frame_buffer.data(), ethernet_frame_buffer.max_size());
+                packet_info, tmp, packet_info.byte_count);
+
+
             ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_POOL);
             if (ptr != nullptr) {
-                pbuf_take(ptr, static_cast<const void *>(ethernet_frame_buffer.data()),
+                pbuf_take(ptr, tmp,
                           packet_info.byte_count);
+                free(tmp);
 
                 LINK_STATS_INC(link.recv);
 #ifdef ENC_DEBUG_ON

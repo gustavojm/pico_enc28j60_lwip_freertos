@@ -101,4 +101,6 @@
 #define SLIP_DEBUG LWIP_DBG_OFF
 #define DHCP_DEBUG LWIP_DBG_OFF
 
+#define IP_REASSEMBLY   1
+
 #endif /* __LWIPOPTS_H__ */
