@@ -46,14 +46,13 @@ FetchContent_MakeAvailable(ArduinoJson)
 target_link_libraries(${PROJECT_NAME} PUBLIC
         pico_stdlib hardware_spi hardware_irq hal enc28j60_driver pico_lwip pico_lwip_freertos
         FreeRTOS-Kernel-Heap4
-        pico_cyw43_arch_none     # we need Wifi to access the GPIO, but we don't need anything else
+        #pico_cyw43_arch_none     # we need Wifi to access the GPIO, but we don't need anything else
         ArduinoJson
         )
 
 
 target_include_directories(${PROJECT_NAME} PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/app
-        ${CMAKE_CURRENT_SOURCE_DIR}/FreeRTOS_port
         )
 
 # disable usb output, disable uart output

@@ -9,9 +9,6 @@
 #include "spi.h"
 #include "utils.h"
 
-#include "pico/cyw43_arch.h"
-
-
 #if !NO_SYS
 void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
 #endif
@@ -54,10 +51,8 @@ void main_task(void *params) {
 
     while (true) {
         //BoardLed.set();
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 1);
         vTaskDelay(100);
         //BoardLed.reset();
-        cyw43_arch_gpio_put(CYW43_WL_GPIO_LED_PIN, 0);
         vTaskDelay(100);
     }
 }
@@ -68,10 +63,6 @@ int main() {
     EncRstPin.init();
     EncCsPin.init();
     //BoardLed.init();
-    if (cyw43_arch_init()) {
-        printf("Wi-Fi init failed");
-        return -1;
-    }
     spi0_.init();
 
     TaskHandle_t task{};

@@ -11,12 +11,18 @@
 #include <array>
 #include <cinttypes>
 
+#include "FreeRTOS.h"
+#include "semphr.h"
+
+#include <cinttypes>
+
 namespace drivers::enc28j60 {
 
 struct Config {
     IGpio &Cs;
     IGpio &Rst;
     ISpi &spi;
+    SemaphoreHandle_t mutex;
 };
 
 class enc28j60 {
@@ -46,6 +52,8 @@ class enc28j60 {
 
     enc28j60(Config &config);
 
+    void lock();
+    void unlock();
     bool init(const MacAddress &mac_address);
     bool is_link_up();
     uint8_t get_number_of_packets();

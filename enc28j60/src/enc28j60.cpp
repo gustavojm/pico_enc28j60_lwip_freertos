@@ -14,7 +14,16 @@ namespace drivers::enc28j60 {
 
 enc28j60::enc28j60(Config &config) : config_{config} {}
 
+void enc28j60::lock() {
+    xSemaphoreTake(config_.mutex, portMAX_DELAY);
+}
+
+void enc28j60::unlock() {
+    xSemaphoreGive(config_.mutex);
+}
+
 bool enc28j60::init(const MacAddress &mac_address) {
+    config_.mutex = xSemaphoreCreateMutex();
     config_.Cs.set();
 
     config_.Rst.reset();
@@ -93,14 +102,17 @@ bool enc28j60::init(const MacAddress &mac_address) {
 bool enc28j60::is_link_up() { return (read_phy(PHSTAT2) & PHSTAT2_LSTAT); }
 
 void enc28j60::write_op(const uint8_t op, const uint8_t addr, const uint8_t data) {
+    lock();
     config_.Cs.reset();
     const uint8_t operation = op | (addr & ENC_ADDR_MASK);
     config_.spi.write(&operation, sizeof(operation));
     config_.spi.write(&data, sizeof(data));
     config_.Cs.set();
+    unlock();
 }
 
 uint8_t enc28j60::read_op(const uint8_t op, const uint8_t reg) {
+    lock();
     config_.Cs.reset();
     const uint8_t operation = op | (reg & ENC_ADDR_MASK);
     uint8_t incoming_data{};
@@ -114,7 +126,8 @@ uint8_t enc28j60::read_op(const uint8_t op, const uint8_t reg) {
     }
 
     config_.Cs.set();
-    return incoming_data;
+    unlock();
+    return incoming_data;    
 }
 
 void enc28j60::select_bank(const uint8_t address) {
@@ -178,24 +191,30 @@ uint16_t enc28j60::read_phy(const uint8_t reg) {
 }
 
 size_t enc28j60::read_buff(uint8_t *src, size_t len) {
+    lock();
     config_.Cs.reset();
     const uint8_t operation = ENC28J60_READ_BUF_MEM;
     config_.spi.write(&operation, 1);
     auto ret = config_.spi.read(src, len);
     config_.Cs.set();
-
+    unlock();
     return ret;
 }
 
 void enc28j60::write_buff(const uint8_t *src, size_t len) {
+    lock();
     config_.Cs.reset();
     const uint8_t operation = ENC28J60_WRITE_BUF_MEM;
     config_.spi.write(&operation, 1);
     config_.spi.write(src, len);
     config_.Cs.set();
+    unlock();
 }
 
-uint8_t enc28j60::get_number_of_packets() { return read_reg(EPKTCNT); }
+uint8_t enc28j60::get_number_of_packets() { 
+    uint8_t n = read_reg(EPKTCNT); 
+    return n;
+}
 
 size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
                                      const size_t length) {
@@ -205,7 +224,7 @@ size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
         bytes_read = read_buff(dst, length);
     }
 
-    next_packet_pointer = info.next_packet_pointer;
+    next_packet_pointer = info.next_packet_pointer;    
     write_reg16(ERXRDPT, info.next_packet_pointer);
     write_op(ENC28J60_BIT_FIELD_SET, ECON2, ECON2_PKTDEC);
 

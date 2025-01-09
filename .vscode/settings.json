@@ -10,6 +10,8 @@
         "cstdlib": "cpp",
         "regex": "cpp",
         "mutex": "cpp",
-        "httpd_structs.h": "c"
+        "httpd_structs.h": "c",
+        "random": "cpp",
+        "future": "cpp"
     },
 }
