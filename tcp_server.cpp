@@ -24,7 +24,7 @@ tcp_server::tcp_server(const char *name, int port, int simultaneous_connections)
 
 void tcp_server::start() {
     xTaskCreate([](void *me) { static_cast<tcp_server *>(me)->task(); }, task_name, 1024, this, TASK_PRIORITY, NULL);
-    printf("%s: created", task_name);
+    printf("%s: created\n", task_name);
 }
 
 struct TaskParams {

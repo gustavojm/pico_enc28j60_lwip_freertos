@@ -117,7 +117,6 @@ static void enc_worker_thread(void *param) {
                 
             }
         }
-        //printf (".");
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

@@ -18,8 +18,7 @@ void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms
 constexpr uint8_t MISO_PIN = 16;
 constexpr uint8_t MOSI_PIN = 19;
 constexpr uint8_t CLK_PIN = 18;
-constexpr uint8_t ENC_IRQ = 22;
-//constexpr uint8_t LED_PIN = 25;
+//constexpr uint8_t ENC_IRQ = 22;
 
 drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
 drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
@@ -53,9 +52,7 @@ void main_task(void *params) {
 
 
     while (true) {
-        //BoardLed.set();
         vTaskDelay(100);
-        //BoardLed.reset();
         vTaskDelay(100);
     }
 }
@@ -65,7 +62,6 @@ int main() {
 
     EncRstPin.init();
     EncCsPin.init();
-    //BoardLed.init();
     spi0_.init();
 
     TaskHandle_t task{};
