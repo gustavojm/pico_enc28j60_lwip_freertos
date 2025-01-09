@@ -26,14 +26,31 @@ constexpr size_t ETHERNET_MTU = 1500;
 static netif net_if{};
 static SemaphoreHandle_t worker_sem{};
 
+void print_pbuf_payload(struct pbuf *p) {
+    struct pbuf *current = p;
+    while (current != NULL) {
+        // Print the current pbuf's payload as a string (ensure it's null-terminated if needed)
+        printf("Payload (len=%d): ", current->len);
+        fwrite(current->payload, 1, current->len, stdout);
+        printf("\n");
+
+        // Move to the next pbuf in the chain
+        current = current->next;
+    }
+}
+
 err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
     LINK_STATS_INC(link.xmit);
     auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
 
-    /** @todo: implement p->next check and send packets untils len == p->tot_len */
-    if (! controller.send_packet(static_cast<uint8_t *>(p->payload), p->len)) {
-        printf("Cannot sent packet....");
-        return ERR_ABRT;
+    struct pbuf *q;
+    for (q = p; q != nullptr; q = q->next) {        
+        //print_pbuf_payload(q);
+
+        if (!controller.send_packet(static_cast<uint8_t *>(q->payload), q->len)) {
+            printf("Cannot send fragment of length %d\r\n", q->len);
+            return ERR_ABRT;
+        }
     }
     //
 #ifdef ENC_DEBUG_ON
@@ -175,7 +192,7 @@ err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
     netif_set_up(&net_if);
     //dhcp_start(&net_if);
 
-    printf("netif DHCP STARTED\n");
+    //printf("netif DHCP STARTED\n");
 
 #if configUSE_CORE_AFFINITY && configNUM_CORES > 1
     vTaskCoreAffinitySet(task_handle, affinity);

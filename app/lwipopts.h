@@ -20,7 +20,8 @@
 #define LWIP_ICMP 1
 #define LWIP_RAW 1
 #define TCP_WND (8 * TCP_MSS)
-#define TCP_MSS 1460
+//#define TCP_MSS 1460
+#define TCP_MSS 146
 #define TCP_SND_BUF (8 * TCP_MSS)
 #define TCP_SND_QUEUELEN ((4 * (TCP_SND_BUF) + (TCP_MSS - 1)) / (TCP_MSS))
 #define LWIP_NETIF_STATUS_CALLBACK 1
@@ -101,6 +102,9 @@
 #define SLIP_DEBUG LWIP_DBG_OFF
 #define DHCP_DEBUG LWIP_DBG_OFF
 
-#define IP_REASSEMBLY   1
+#define HTTPD_DEBUG LWIP_DBG_ON
+
+#define IP_REASSEMBLY   1       // for input packets
+#define IP_FRAG         1       // for output packets
 
 #endif /* __LWIPOPTS_H__ */

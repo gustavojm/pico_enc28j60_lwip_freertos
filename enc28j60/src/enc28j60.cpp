@@ -330,7 +330,7 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
         // a counter to avoid hangs; of course they didn't update the errata sheet
         uint16_t count = 0;
         while ((read_reg(EIR) & (EIR_TXIF | EIR_TXERIF)) == 0 && ++count < 1000U) {
-            printf("retry %d", count); 
+            //printf("retry %d", count); 
         }
 
         if (!(read_reg(EIR) & EIR_TXERIF) && count < 1000U) {
