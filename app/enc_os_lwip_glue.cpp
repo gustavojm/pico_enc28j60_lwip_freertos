@@ -31,7 +31,7 @@ err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
     auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
 
     /** @todo: implement p->next check and send packets untils len == p->tot_len */
-    if (not controller.send_packet(static_cast<uint8_t *>(p->payload), p->len)) {
+    if (! controller.send_packet(static_cast<uint8_t *>(p->payload), p->len)) {
         printf("Cannot sent packet....");
         return ERR_ABRT;
     }
@@ -89,8 +89,8 @@ static void enc_worker_thread(void *param) {
 
                 LINK_STATS_INC(link.recv);
 #ifdef ENC_DEBUG_ON
-                printf("Received packet with len %d!\r\n", 
-                       packet_info.byte_count);
+                //printf("Received packet with len %d!\r\n", 
+                //       packet_info.byte_count);
 #endif
 
                 if (net_if.input(ptr, &net_if) != ERR_OK) {
@@ -100,7 +100,7 @@ static void enc_worker_thread(void *param) {
                 
             }
         }
-        printf (".");
+        //printf (".");
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

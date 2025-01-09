@@ -9,6 +9,8 @@
 #include "spi.h"
 #include "utils.h"
 
+#include "lwip/apps/httpd.h"
+
 #if !NO_SYS
 void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
 #endif
@@ -47,6 +49,7 @@ void main_task(void *params) {
     enc_driver_lwip_init(eth_driver);
 
     cmd_server.start();
+    httpd_init();
 
 
     while (true) {

@@ -54,6 +54,7 @@ class enc28j60 {
 
     void lock();
     void unlock();
+    void send_packet(uint16_t len);
     bool init(const MacAddress &mac_address);
     bool is_link_up();
     uint8_t get_number_of_packets();
@@ -71,7 +72,9 @@ class enc28j60 {
 
     void write_reg(const uint8_t addr, const uint8_t data);
     void write_reg16(const uint8_t addr, const uint16_t data);
+    
     uint8_t read_reg(const uint8_t reg);
+    uint16_t read_reg16(const uint8_t reg);
 
     void write_phy(const uint8_t reg, const uint16_t data);
     uint16_t read_phy(const uint8_t reg);

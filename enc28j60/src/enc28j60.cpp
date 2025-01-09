@@ -1,6 +1,7 @@
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
 #include "utils.h"
+#include "stdio.h"
 
 namespace {
 constexpr uint16_t RXSTART_INIT = 0x0;
@@ -154,6 +155,10 @@ uint8_t enc28j60::read_reg(const uint8_t reg) {
     return read_op(ENC28J60_READ_CTRL_REG, reg);
 }
 
+uint16_t enc28j60::read_reg16(const uint8_t reg) {
+    return read_reg(reg) + (read_reg(reg+1) << 8);
+}
+
 void enc28j60::write_phy(const uint8_t reg, const uint16_t data) {
     /** 1. Write the address of the PHY register to write to into the MIREGADR register. */
     write_reg(MIREGADR, reg);
@@ -231,38 +236,136 @@ size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
     return bytes_read;
 }
 
+// bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
+
+//     /* Latest errata sheet: DS80349C
+//      * always reset transmit logic (Errata Issue 12) */
+//     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+//     write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+
+//     write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF|EIR_TXIF);
+
+//     // Set the write pointer to start of transmit buffer area
+//     write_reg16(ETXST, TXSTART_INIT);
+//     write_reg16(EWRPT, TXSTART_INIT);
+
+//     // Set the TXND pointer to correspond to the packet size given
+//     // write per-packet control byte (0x00 means use macon3 settings)
+//     const uint8_t PPC = 0;
+//     write_buff(&PPC, 1);
+//     write_buff(src, len);
+
+//     write_reg16(ETXND, TXSTART_INIT + len);
+
+//     // Send data over network
+//     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
+
+//     uint16_t count = 0;
+//     while ((read_reg(EIR) & (EIR_TXIF | EIR_TXERIF)) == 0 && ++count < 1000U)
+//         ;
+
+//     if (!(read_reg(EIR) & EIR_TXERIF) && count < 1000U) {
+//         return true;
+//     }
+
+//     uint8_t status = read_reg(ESTAT);
+//     if (status & ESTAT_TXABRT) {
+//         return false;
+//     }
+
+//     return true;
+// }
+
+struct transmit_status_vector {
+    uint8_t bytes[7];
+};
+
+#define ETHERCARD_SEND_PIPELINING 1
+
+#if ETHERCARD_SEND_PIPELINING
+    #define BREAKORCONTINUE retry=0; continue;
+#else
+    #define BREAKORCONTINUE break;
+#endif
+
 bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
+    uint8_t retry = 0;
 
-    /* Latest errata sheet: DS80349C
-     * always reset transmit logic (Errata Issue 12) */
-    write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
-    write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+    #if ETHERCARD_SEND_PIPELINING
+        goto resume_last_transmission;
+    #endif
+    while (1) {
+        // latest errata sheet: DS80349C
+        // always reset transmit logic (Errata Issue 12)
+        // the Microchip TCP/IP stack implementation used to first check
+        // whether TXERIF is set and only then reset the transmit logic
+        // but this has been changed in later versions; possibly they
+        // have a reason for this; they don't mention this in the errata
+        // sheet
+        write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+        write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+        write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF|EIR_TXIF);
 
-    // Set the write pointer to start of transmit buffer area
-    write_reg16(ETXST, TXSTART_INIT);
-    write_reg16(EWRPT, TXSTART_INIT);
+        // prepare new transmission
+        if (retry == 0) {
+            write_reg16(EWRPT, TXSTART_INIT);
+            write_reg16(ETXND, TXSTART_INIT+len);
+            write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
+            write_buff(src, len);
 
-    // Set the TXND pointer to correspond to the packet size given
-    // write per-packet control byte (0x00 means use macon3 settings)
-    const uint8_t PPC = 0;
-    write_buff(&PPC, 1);
-    write_buff(src, len);
+        }
 
-    write_reg16(ETXND, TXSTART_INIT + len);
+        // initiate transmission
+        write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
+        #if ETHERCARD_SEND_PIPELINING
+            if (retry == 0) return true;
+        #endif
 
-    // Send data over network
-    write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
+    resume_last_transmission:
 
-    while (not(read_reg(EIR) & EIR_TXIF))
-        ;
+        // wait until transmission has finished; referring to the data sheet and
+        // to the errata (Errata Issue 13; Example 1) you only need to wait until either
+        // TXIF or TXERIF gets set; however this leads to hangs; apparently Microchip
+        // realized this and in later implementations of their tcp/ip stack they introduced
+        // a counter to avoid hangs; of course they didn't update the errata sheet
+        uint16_t count = 0;
+        while ((read_reg(EIR) & (EIR_TXIF | EIR_TXERIF)) == 0 && ++count < 1000U) {
+            printf("retry %d", count); 
+        }
 
-    uint8_t status = read_reg(ESTAT);
-    if (status & ESTAT_TXABRT) {
-        return false;
+        if (!(read_reg(EIR) & EIR_TXERIF) && count < 1000U) {
+            // no error; start new transmission
+            BREAKORCONTINUE
+        }
+
+        // cancel previous transmission if stuck
+        write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
+
+    #if ETHERCARD_RETRY_LATECOLLISIONS == 0
+        BREAKORCONTINUE
+    #endif
+
+        // Check whether the chip thinks that a late collision occurred; the chip
+        // may be wrong (Errata Issue 13); therefore we retry. We could check
+        // LATECOL in the ESTAT register in order to find out whether the chip
+        // thinks a late collision occurred but (Errata Issue 15) tells us that
+        // this is not working. Therefore we check TSV
+        transmit_status_vector tsv;
+        uint16_t etxnd = read_reg16(ETXND);
+        write_reg16(ERDPT, etxnd+1);
+        read_buff((uint8_t*) &tsv, sizeof(transmit_status_vector));
+        // LATECOL is bit number 29 in TSV (starting from 0)
+
+        if (!((read_reg(EIR) & EIR_TXERIF) && (tsv.bytes[3] & 1<<5) /*tsv.transmitLateCollision*/) || retry > 16U) {
+            // there was some error but no LATECOL so we do not repeat
+            BREAKORCONTINUE
+        }
+
+        retry++;
     }
-
-    return true;
+    return false;
 }
+
 
 enc28j60::PacketMetaInfo enc28j60::get_incoming_packet_info() {
     PacketMetaInfo ret{};
