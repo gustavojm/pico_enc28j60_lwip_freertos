@@ -107,4 +107,6 @@
 #define IP_REASSEMBLY   1       // for input packets
 #define IP_FRAG         1       // for output packets
 
+#define MEMP_NUM_SYS_TIMEOUT        LWIP_NUM_SYS_TIMEOUT_INTERNAL + 8
+
 #endif /* __LWIPOPTS_H__ */

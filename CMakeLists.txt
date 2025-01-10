@@ -50,6 +50,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
         FreeRTOS-Kernel-Heap4
         #pico_cyw43_arch_none     # we need Wifi to access the GPIO, but we don't need anything else
         ArduinoJson
+        pico_lwip_mqtt
         )
 
 
