@@ -58,7 +58,7 @@
 #define configUSE_APPLICATION_TASK_TAG 0
 #define configUSE_COUNTING_SEMAPHORES 1
 #define configQUEUE_REGISTRY_SIZE 8
-#define configUSE_QUEUE_SETS 0
+#define configUSE_QUEUE_SETS 1
 #define configUSE_TIME_SLICING 1
 #define configUSE_NEWLIB_REENTRANT 0
 // todo need this for lwip FreeRTOS sys_arch to compile
