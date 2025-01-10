@@ -21,6 +21,7 @@ namespace drivers::enc28j60 {
 struct Config {
     IGpio &Cs;
     IGpio &Rst;
+    uint8_t Irq;
     ISpi &spi;
     SemaphoreHandle_t mutex;
 };
@@ -85,5 +86,15 @@ class enc28j60 {
     uint8_t current_register_bank;
     uint16_t next_packet_pointer;
     bool current_link_state;
+
+    private:
+    int wait_phy_ready();
+    int poll_ready(uint8_t reg, uint8_t mask, uint8_t val);      
+    void txfifo_init(uint16_t start, uint16_t end);
+    bool enc28j60_irq(int irq);
+    void tx_clear(bool err);
+    int get_free_rxfifo();
+    int rx_interrupt();
+    
 };
 } // namespace drivers::enc28j60

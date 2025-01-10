@@ -18,14 +18,14 @@ void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms
 constexpr uint8_t MISO_PIN = 16;
 constexpr uint8_t MOSI_PIN = 19;
 constexpr uint8_t CLK_PIN = 18;
-//constexpr uint8_t ENC_IRQ = 22;
+constexpr uint8_t ENC_IRQ = 22;
 
 drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
 drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
 drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
 drivers::spi::SpiWrapper spi0_{spi0Config};
 
-drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, spi0_};
+drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, ENC_IRQ, spi0_};
 drivers::enc28j60::enc28j60 eth_driver{EncConfig};
 
 //drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
@@ -44,7 +44,6 @@ void main_task(void *params) {
 
     enc_driver_os_init();
     
-
     enc_driver_lwip_init(eth_driver);
 
     cmd_server.start();

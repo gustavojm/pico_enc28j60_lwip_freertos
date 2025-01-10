@@ -1,12 +1,18 @@
+#include "FreeRTOS.h"
+#include "task.h"
+
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
 #include "utils.h"
 #include "stdio.h"
+#include "errno.h"
+#include "pico/stdlib.h"
 
 namespace {
 constexpr uint16_t RXSTART_INIT = 0x0;
 constexpr uint16_t RXSTOP_INIT = (0x1FFF - 0x0600 - 1);
 constexpr uint16_t TXSTART_INIT = (0x1FFF - 0x0600);
+constexpr uint16_t TXEND_INIT = 0x1FFF;
 constexpr uint16_t TXSTOP_INIT = 0x1FFF;
 constexpr uint32_t AFTER_RESET_DELAY_MS = 100;
 } // namespace
@@ -21,6 +27,10 @@ void enc28j60::lock() {
 
 void enc28j60::unlock() {
     xSemaphoreGive(config_.mutex);
+}
+
+void gpio_callback(uint gpio, uint32_t events) {
+    //printf("I");
 }
 
 bool enc28j60::init(const MacAddress &mac_address) {
@@ -97,6 +107,23 @@ bool enc28j60::init(const MacAddress &mac_address) {
     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
 
     uint8_t rev = read_reg(EREVID);
+
+    // Enabling Interrupts 
+    write_phy(PHIE, PHIE_PGEIE | PHIE_PLNKIE);
+
+	lock();
+	write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF | EIR_LINKIF |
+			 EIR_TXIF | EIR_TXERIF | EIR_RXERIF | EIR_PKTIF);
+	write_reg(EIE, EIE_INTIE | EIE_PKTIE | EIE_LINKIE |
+			  EIE_TXIE | EIE_TXERIE | EIE_RXERIE);
+
+	/* enable receive logic */
+	write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
+    unlock();
+
+    gpio_init(config_.Irq);
+    gpio_disable_pulls(config_.Irq);
+    gpio_set_irq_enabled_with_callback(config_.Irq, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
     return rev > 0;
 }
 
@@ -140,23 +167,31 @@ void enc28j60::select_bank(const uint8_t address) {
 }
 
 void enc28j60::write_reg(const uint8_t addr, const uint8_t data) {
+    lock();
     select_bank(addr);
     write_op(ENC28J60_WRITE_CTRL_REG, addr, data);
+    unlock();
 }
 
 void enc28j60::write_reg16(const uint8_t addr, const uint16_t data) {
     //    enc28j60::write_op_16bit(ENC28J60_WRITE_CTRL_REG, addr, data);
+    lock();
     write_reg(addr, data & 0xff);
     write_reg(addr + 1, data >> 8);
+    unlock();
 }
 
 uint8_t enc28j60::read_reg(const uint8_t reg) {
+    lock();
     select_bank(reg);
     return read_op(ENC28J60_READ_CTRL_REG, reg);
+    unlock();
 }
 
 uint16_t enc28j60::read_reg16(const uint8_t reg) {
+    lock();
     return read_reg(reg) + (read_reg(reg+1) << 8);
+    unlock();
 }
 
 void enc28j60::write_phy(const uint8_t reg, const uint16_t data) {
@@ -236,46 +271,6 @@ size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
     return bytes_read;
 }
 
-// bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
-
-//     /* Latest errata sheet: DS80349C
-//      * always reset transmit logic (Errata Issue 12) */
-//     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
-//     write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
-
-//     write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF|EIR_TXIF);
-
-//     // Set the write pointer to start of transmit buffer area
-//     write_reg16(ETXST, TXSTART_INIT);
-//     write_reg16(EWRPT, TXSTART_INIT);
-
-//     // Set the TXND pointer to correspond to the packet size given
-//     // write per-packet control byte (0x00 means use macon3 settings)
-//     const uint8_t PPC = 0;
-//     write_buff(&PPC, 1);
-//     write_buff(src, len);
-
-//     write_reg16(ETXND, TXSTART_INIT + len);
-
-//     // Send data over network
-//     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
-
-//     uint16_t count = 0;
-//     while ((read_reg(EIR) & (EIR_TXIF | EIR_TXERIF)) == 0 && ++count < 1000U)
-//         ;
-
-//     if (!(read_reg(EIR) & EIR_TXERIF) && count < 1000U) {
-//         return true;
-//     }
-
-//     uint8_t status = read_reg(ESTAT);
-//     if (status & ESTAT_TXABRT) {
-//         return false;
-//     }
-
-//     return true;
-// }
-
 struct transmit_status_vector {
     uint8_t bytes[7];
 };
@@ -308,14 +303,20 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
 
         // prepare new transmission
         if (retry == 0) {
+            // Set the write pointer to start of transmit buffer area
             write_reg16(EWRPT, TXSTART_INIT);
-            write_reg16(ETXND, TXSTART_INIT+len);
-            write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
-            write_buff(src, len);
 
+            // Set the TXND pointer to correspond to the packet size given            
+            write_reg16(ETXND, TXSTART_INIT+len);
+
+            // Write per-packet control byte
+            write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
+
+            // Copy the packet into the transmit buffer
+            write_buff(src, len);
         }
 
-        // initiate transmission
+        // Initiate transmission
         write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
         #if ETHERCARD_SEND_PIPELINING
             if (retry == 0) return true;
@@ -330,7 +331,6 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
         // a counter to avoid hangs; of course they didn't update the errata sheet
         uint16_t count = 0;
         while ((read_reg(EIR) & (EIR_TXIF | EIR_TXERIF)) == 0 && ++count < 1000U) {
-            //printf("retry %d", count); 
         }
 
         if (!(read_reg(EIR) & EIR_TXERIF) && count < 1000U) {
@@ -338,7 +338,7 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
             BREAKORCONTINUE
         }
 
-        // cancel previous transmission if stuck
+        // Cancel previous transmission if stuck
         write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
 
     #if ETHERCARD_RETRY_LATECOLLISIONS == 0
@@ -366,7 +366,6 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
     return false;
 }
 
-
 enc28j60::PacketMetaInfo enc28j60::get_incoming_packet_info() {
     PacketMetaInfo ret{};
     write_reg16(ERDPT, next_packet_pointer);
@@ -383,5 +382,183 @@ bool enc28j60::link_state_changed() {
 
     return false;
 }
+
+int enc28j60::poll_ready(uint8_t reg, uint8_t mask, uint8_t val) {
+	TickType_t start = xTaskGetTickCount();
+
+	/* 20 msec timeout read */
+	while ((read_reg(reg) & mask) != val) {
+		if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(20)) {
+			return -ETIMEDOUT;
+		}
+		asm("nop");
+	}
+	return 0;
+}
+
+/*
+ * Wait until the PHY operation is complete.
+ */
+int enc28j60::wait_phy_ready() {
+	return poll_ready(MISTAT, MISTAT_BUSY, 0) ? 0 : 1;
+}
+
+
+void enc28j60::txfifo_init(uint16_t start, uint16_t end) {
+	if (start > 0x1FFF || end > 0x1FFF || start > end) {
+		// printf("%s(%d, %d) TXFIFO bad parameters!\n",
+		// 		__func__, start, end);
+		return;
+	}
+	/* set transmit buffer start + end */
+	write_reg16(ETXST, start);      // ETXSTL
+	write_reg16(ETXND, end);        // ETXNDL
+}
+
+void enc28j60::tx_clear(bool err) {
+	write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);   // Should be locked
+	// netif_wake_queue(ndev);
+}
+
+/*
+ * Calculate free space in RxFIFO
+ */
+int enc28j60::get_free_rxfifo() {
+	int epkcnt, erxst, erxnd, erxwr, erxrd;
+	int free_space;
+
+	lock();
+	epkcnt = read_reg(EPKTCNT);
+	if (epkcnt >= 255)
+		free_space = -1;
+	else {
+		erxst = read_reg16(ERXST);
+		erxnd = read_reg16(ERXND);
+		erxwr = read_reg16(ERXWRPT);
+		erxrd = read_reg16(ERXRDPT);
+
+		if (erxwr > erxrd)
+			free_space = (erxnd - erxst) - (erxwr - erxrd);
+		else if (erxwr == erxrd)
+			free_space = (erxnd - erxst);
+		else
+			free_space = erxrd - erxwr - 1;
+	}
+	unlock();
+            //printf("%s() free_space = %d\n", __func__, free_space);
+	return free_space;
+}
+
+bool enc28j60::enc28j60_irq(int irq) {
+	// struct enc28j60_net *priv = dev_id;
+	// struct net_device *ndev = priv->netdev;
+	int intflags, loop;
+
+	/* disable further interrupts */
+    write_op(ENC28J60_BIT_FIELD_CLR, EIE, EIE_INTIE);
+
+	do {
+		loop = 0;
+		intflags = read_reg(EIR);
+		/* DMA interrupt handler (not currently used) */
+		if ((intflags & EIR_DMAIF) != 0) {
+			loop++;
+            write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF);
+		}
+		/* LINK changed handler */
+		if ((intflags & EIR_LINKIF) != 0) {
+			loop++;
+			//enc28j60_check_link_status(ndev);
+			/* read PHIR to clear the flag */
+			read_phy(PHIR);
+		}
+		/* TX complete handler */
+		if (((intflags & EIR_TXIF) != 0) &&
+		    ((intflags & EIR_TXERIF) == 0)) {
+			bool err = false;
+			loop++;
+				//printf("intTX(%d)\n", loop);
+			
+			if (read_reg(ESTAT) & ESTAT_TXABRT) {
+					//printf("Tx Error (aborted)\n");
+				err = true;
+			}
+			tx_clear(err);
+			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXIF);
+		}
+		/* TX Error handler */
+		if ((intflags & EIR_TXERIF) != 0) {
+			//uint8_t tsv[TSV_SIZE];
+
+			loop++;
+				//printf()"intTXErr(%d)\n", loop);
+            write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
+			//enc28j60_read_tsv(priv, tsv);
+			// if (netif_msg_tx_err(priv))
+			// 	enc28j60_dump_tsv(priv, "Tx Error", tsv);
+			/* Reset TX logic */
+			lock();
+            write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+            write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+			txfifo_init(TXSTART_INIT, TXEND_INIT);
+			unlock();
+			/* Transmit Late collision check for retransmit */
+			// if (TSV_GETBIT(tsv, TSV_TXLATECOLLISION)) {
+			// 	if (netif_msg_tx_err(priv))
+			// 		netdev_printk(KERN_DEBUG, ndev,
+			// 			      "LateCollision TXErr (%d)\n",
+			// 			      priv->tx_retry_count);
+			// 	if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
+			// 		write_op(ENC28J60_BIT_FIELD_SET ECON1,
+			// 				   ECON1_TXRTS);
+			// 	else
+			// 		tx_clear(ndev, true);
+			// } else
+			// 	tx_clear(ndev, true);
+			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF);    //should be locked
+		}
+		/* RX Error handler */
+		if ((intflags & EIR_RXERIF) != 0) {
+			loop++;
+                printf("intRXErr(%d)\n", loop);
+			/* Check free FIFO space to flag RX overrun */
+			if (get_free_rxfifo() <= 0) {
+				//printf("RX Overrun\n");
+			}
+			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF);        // should be locked
+		}
+		/* RX handler */
+		if (rx_interrupt())
+			loop++;
+	} while (loop);
+
+	/* re-enable interrupts */
+	write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE);     // should be locked
+    
+
+	return true;
+}
+
+
+/*
+ * RX handler
+ * Ignore PKTIF because is unreliable! (Look at the errata datasheet)
+ * Check EPKTCNT is the suggested workaround.
+ * We don't need to clear interrupt flag, automatically done when
+ * enc28j60_hw_rx() decrements the packet counter.
+ * Returns how many packet processed.
+ */
+int enc28j60::rx_interrupt() {
+	int pk_counter, ret;
+
+	pk_counter = read_reg(EPKTCNT);
+	ret = pk_counter;
+	while (pk_counter-- > 0)
+		//hw_rx();
+        printf("handler rx");
+
+	return ret;
+}
+
 
 } // namespace drivers::enc28j60

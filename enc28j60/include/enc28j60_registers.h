@@ -26,6 +26,8 @@ constexpr uint8_t ERXRDPT = (0x0C | 0x00);
 constexpr uint8_t EDMAST = (0x10 | 0x00);
 constexpr uint8_t EDMAND = (0x12 | 0x00);
 constexpr uint8_t EDMACS = (0x16 | 0x00);
+constexpr uint8_t ERXWRPT = (0x0E|0x00);
+
 // Bank 1 registers
 constexpr uint8_t EHT0 = (0x00 | 0x20);
 constexpr uint8_t EHT1 = (0x01 | 0x20);
@@ -188,6 +190,14 @@ constexpr uint16_t PHCON2_FRCLINK = 0x4000;
 constexpr uint16_t PHCON2_TXDIS = 0x2000;
 constexpr uint16_t PHCON2_JABBER = 0x0400;
 constexpr uint16_t PHCON2_HDLDIS = 0x0100;
+
+/* ENC28J60 PHY PHIE Register Bit Definitions */
+constexpr uint8_t PHIE_PLNKIE = (1 << 4);
+constexpr uint8_t PHIE_PGEIE  = (1 << 1);
+/* ENC28J60 PHY PHIR Register Bit Definitions */
+constexpr uint8_t PHIR_PLNKIF = (1 << 4);
+constexpr uint8_t PHIR_PGEIF  = (1 << 1);
+
 
 // ENC28J60 Packet Control Byte Bit Definitions
 constexpr uint16_t PKTCTRL_PHUGEEN = 0x08;
