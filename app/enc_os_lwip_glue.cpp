@@ -161,9 +161,9 @@ err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
 #endif
 
 // Define your IP address, netmask, and gateway
-#define IP_ADDR   "10.30.113.199"
+#define IP_ADDR   "192.168.2.30"
 #define NETMASK   "255.255.255.0"
-#define GATEWAY   "10.30.113.1"
+#define GATEWAY   "192.168.2.1"
 
    ip4_addr_t ipaddr, netmask, gw;
 
