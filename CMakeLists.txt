@@ -29,6 +29,7 @@ add_executable(${PROJECT_NAME}
         main.cpp
         tcp_server.cpp
         tcp_server_command.cpp
+        mqtt_example.cpp
         httpd.c
         fs.c
         ${CMAKE_CURRENT_SOURCE_DIR}/app/enc_os_lwip_glue.cpp
