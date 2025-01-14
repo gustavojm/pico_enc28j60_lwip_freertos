@@ -3,10 +3,12 @@
 
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
-#include "utils.h"
-#include "stdio.h"
+#include "enc_os_lwip_glue.h"
 #include "errno.h"
 #include "pico/stdlib.h"
+#include "stdio.h"
+#include "utils.h"
+#include "lwip/netif.h"
 
 namespace {
 constexpr uint16_t RXSTART_INIT = 0x0;
@@ -16,25 +18,139 @@ constexpr uint16_t TXEND_INIT = 0x1FFF;
 constexpr uint16_t TXSTOP_INIT = 0x1FFF;
 constexpr uint32_t AFTER_RESET_DELAY_MS = 100;
 } // namespace
-
 namespace drivers::enc28j60 {
 
 enc28j60::enc28j60(Config &config) : config_{config} {}
 
-void enc28j60::lock() {
-    xSemaphoreTake(config_.mutex, portMAX_DELAY);
-}
+void enc28j60::lock() { xSemaphoreTakeRecursive(config_.mutex, portMAX_DELAY); }
 
-void enc28j60::unlock() {
-    xSemaphoreGive(config_.mutex);
-}
+void enc28j60::unlock() { xSemaphoreGiveRecursive(config_.mutex); }
 
-void gpio_callback(uint gpio, uint32_t events) {
-    //printf("I");
+void enc28j60::irq_loop() {
+
+    while (true) {
+        if (xSemaphoreTake(irq_loop_sem, portMAX_DELAY) == pdPASS) {
+            printf("I");
+
+            int intflags, loop;
+            /* disable further interrupts */
+            write_op(ENC28J60_BIT_FIELD_CLR, EIE, EIE_INTIE);
+
+            // do {
+            loop = 0;
+            intflags = read_reg(EIR);
+            /* DMA interrupt handler (not currently used) */
+            if ((intflags & EIR_DMAIF) != 0) {
+                loop++;
+                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF);
+            }
+            /* LINK changed handler */
+            if ((intflags & EIR_LINKIF) != 0) {
+                loop++;
+                // enc28j60_check_link_status(ndev);
+                /* read PHIR to clear the flag */
+                read_phy(PHIR);
+            }
+            /* TX complete handler */
+            if (((intflags & EIR_TXIF) != 0) && ((intflags & EIR_TXERIF) == 0)) {
+                bool err = false;
+                loop++;
+                // printf("intTX(%d)\n", loop);
+
+                if (read_reg(ESTAT) & ESTAT_TXABRT) {
+                    // printf("Tx Error (aborted)\n");
+                    err = true;
+                }
+                tx_clear(err);
+                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXIF);
+            }
+            /* TX Error handler */
+            if ((intflags & EIR_TXERIF) != 0) {
+                // uint8_t tsv[TSV_SIZE];
+
+                loop++;
+                // printf()"intTXErr(%d)\n", loop);
+                write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
+                // enc28j60_read_tsv(priv, tsv);
+                //  if (netif_msg_tx_err(priv))
+                //  	enc28j60_dump_tsv(priv, "Tx Error", tsv);
+                /* Reset TX logic */
+                lock();
+                write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+                write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+                txfifo_init(TXSTART_INIT, TXEND_INIT);
+                unlock();
+                /* Transmit Late collision check for retransmit */
+                // if (TSV_GETBIT(tsv, TSV_TXLATECOLLISION)) {
+                // 	if (netif_msg_tx_err(priv))
+                // 		netdev_printk(KERN_DEBUG, ndev,
+                // 			      "LateCollision TXErr (%d)\n",
+                // 			      priv->tx_retry_count);
+                // 	if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
+                // 		write_op(ENC28J60_BIT_FIELD_SET ECON1,
+                // 				   ECON1_TXRTS);
+                // 	else
+                // 		tx_clear(ndev, true);
+                // } else
+                // 	tx_clear(ndev, true);
+                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF); // should be
+                                                                              // locked
+            }
+            /* RX Error handler */
+            if ((intflags & EIR_RXERIF) != 0) {
+                loop++;
+                printf("intRXErr(%d)\n", loop);
+                /* Check free FIFO space to flag RX overrun */
+                if (get_free_rxfifo() <= 0) {
+                    // printf("RX Overrun\n");
+                }
+                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF); // should be locked
+            }
+            /* RX handler */
+            printf("R");
+
+            int pk_counter, ret;
+
+            pk_counter = read_reg(EPKTCNT);
+            ret = pk_counter;
+            while (pk_counter-- > 0) {
+                // hw_rx();
+                // printf("handler rx");
+
+                auto packet_info = get_incoming_packet_info();
+
+                pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
+                if (ptr != nullptr) {
+                    get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
+                                        packet_info.byte_count);
+
+                    LINK_STATS_INC(link.recv);
+#ifdef ENC_DEBUG_ON
+                    // printf("Received packet with len %d!\r\n",
+                    //        packet_info.byte_count);
+#endif
+
+                    if (net_if.input(ptr, &net_if) != ERR_OK) {
+                        printf("Error processing frame input\r\n");
+                        pbuf_free(ptr);
+                    }
+                }
+            }
+
+            //} while (loop);
+
+            /* re-enable interrupts */
+            write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE); // should be locked
+        }
+    }
 }
 
 bool enc28j60::init(const MacAddress &mac_address) {
-    config_.mutex = xSemaphoreCreateMutex();
+    config_.mutex = xSemaphoreCreateRecursiveMutex();
+    if (config_.mutex) {
+        printf(" * * * * MUTEX CREATED * * * *");
+    }
+
     config_.Cs.set();
 
     config_.Rst.reset();
@@ -108,22 +224,18 @@ bool enc28j60::init(const MacAddress &mac_address) {
 
     uint8_t rev = read_reg(EREVID);
 
-    // Enabling Interrupts 
+    // Enabling Interrupts
     write_phy(PHIE, PHIE_PGEIE | PHIE_PLNKIE);
 
-	lock();
-	write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF | EIR_LINKIF |
-			 EIR_TXIF | EIR_TXERIF | EIR_RXERIF | EIR_PKTIF);
-	write_reg(EIE, EIE_INTIE | EIE_PKTIE | EIE_LINKIE |
-			  EIE_TXIE | EIE_TXERIE | EIE_RXERIE);
+    lock();
+    write_op(ENC28J60_BIT_FIELD_CLR, EIR,
+             EIR_DMAIF | EIR_LINKIF | EIR_TXIF | EIR_TXERIF | EIR_RXERIF | EIR_PKTIF);
+    write_reg(EIE, EIE_INTIE | EIE_PKTIE | EIE_LINKIE | EIE_TXIE | EIE_TXERIE | EIE_RXERIE);
 
-	/* enable receive logic */
-	write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
+    /* enable receive logic */
+    write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
     unlock();
 
-    gpio_init(config_.Irq);
-    gpio_disable_pulls(config_.Irq);
-    gpio_set_irq_enabled_with_callback(config_.Irq, GPIO_IRQ_EDGE_RISE, true, &gpio_callback);
     return rev > 0;
 }
 
@@ -155,7 +267,7 @@ uint8_t enc28j60::read_op(const uint8_t op, const uint8_t reg) {
 
     config_.Cs.set();
     unlock();
-    return incoming_data;    
+    return incoming_data;
 }
 
 void enc28j60::select_bank(const uint8_t address) {
@@ -184,14 +296,16 @@ void enc28j60::write_reg16(const uint8_t addr, const uint16_t data) {
 uint8_t enc28j60::read_reg(const uint8_t reg) {
     lock();
     select_bank(reg);
-    return read_op(ENC28J60_READ_CTRL_REG, reg);
+    uint8_t res = read_op(ENC28J60_READ_CTRL_REG, reg);
     unlock();
+    return res;
 }
 
 uint16_t enc28j60::read_reg16(const uint8_t reg) {
     lock();
-    return read_reg(reg) + (read_reg(reg+1) << 8);
+    uint8_t res = read_reg(reg) + (read_reg(reg + 1) << 8);
     unlock();
+    return res;
 }
 
 void enc28j60::write_phy(const uint8_t reg, const uint16_t data) {
@@ -251,8 +365,8 @@ void enc28j60::write_buff(const uint8_t *src, size_t len) {
     unlock();
 }
 
-uint8_t enc28j60::get_number_of_packets() { 
-    uint8_t n = read_reg(EPKTCNT); 
+uint8_t enc28j60::get_number_of_packets() {
+    uint8_t n = read_reg(EPKTCNT);
     return n;
 }
 
@@ -264,7 +378,7 @@ size_t enc28j60::get_incoming_packet(const PacketMetaInfo &info, uint8_t *dst,
         bytes_read = read_buff(dst, length);
     }
 
-    next_packet_pointer = info.next_packet_pointer;    
+    next_packet_pointer = info.next_packet_pointer;
     write_reg16(ERXRDPT, info.next_packet_pointer);
     write_op(ENC28J60_BIT_FIELD_SET, ECON2, ECON2_PKTDEC);
 
@@ -278,17 +392,19 @@ struct transmit_status_vector {
 #define ETHERCARD_SEND_PIPELINING 1
 
 #if ETHERCARD_SEND_PIPELINING
-    #define BREAKORCONTINUE retry=0; continue;
+#define BREAKORCONTINUE                                                                            \
+    retry = 0;                                                                                     \
+    continue;
 #else
-    #define BREAKORCONTINUE break;
+#define BREAKORCONTINUE break;
 #endif
 
 bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
     uint8_t retry = 0;
 
-    #if ETHERCARD_SEND_PIPELINING
-        goto resume_last_transmission;
-    #endif
+#if ETHERCARD_SEND_PIPELINING
+    goto resume_last_transmission;
+#endif
     while (1) {
         // latest errata sheet: DS80349C
         // always reset transmit logic (Errata Issue 12)
@@ -299,15 +415,15 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
         // sheet
         write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
         write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
-        write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF|EIR_TXIF);
+        write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF);
 
         // prepare new transmission
         if (retry == 0) {
             // Set the write pointer to start of transmit buffer area
             write_reg16(EWRPT, TXSTART_INIT);
 
-            // Set the TXND pointer to correspond to the packet size given            
-            write_reg16(ETXND, TXSTART_INIT+len);
+            // Set the TXND pointer to correspond to the packet size given
+            write_reg16(ETXND, TXSTART_INIT + len);
 
             // Write per-packet control byte
             write_op(ENC28J60_WRITE_BUF_MEM, 0, 0x00);
@@ -318,9 +434,10 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
 
         // Initiate transmission
         write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRTS);
-        #if ETHERCARD_SEND_PIPELINING
-            if (retry == 0) return true;
-        #endif
+#if ETHERCARD_SEND_PIPELINING
+        if (retry == 0)
+            return true;
+#endif
 
     resume_last_transmission:
 
@@ -341,9 +458,9 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
         // Cancel previous transmission if stuck
         write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
 
-    #if ETHERCARD_RETRY_LATECOLLISIONS == 0
+#if ETHERCARD_RETRY_LATECOLLISIONS == 0
         BREAKORCONTINUE
-    #endif
+#endif
 
         // Check whether the chip thinks that a late collision occurred; the chip
         // may be wrong (Errata Issue 13); therefore we retry. We could check
@@ -352,11 +469,13 @@ bool enc28j60::send_packet(const uint8_t *src, const size_t len) {
         // this is not working. Therefore we check TSV
         transmit_status_vector tsv;
         uint16_t etxnd = read_reg16(ETXND);
-        write_reg16(ERDPT, etxnd+1);
-        read_buff((uint8_t*) &tsv, sizeof(transmit_status_vector));
+        write_reg16(ERDPT, etxnd + 1);
+        read_buff((uint8_t *)&tsv, sizeof(transmit_status_vector));
         // LATECOL is bit number 29 in TSV (starting from 0)
 
-        if (!((read_reg(EIR) & EIR_TXERIF) && (tsv.bytes[3] & 1<<5) /*tsv.transmitLateCollision*/) || retry > 16U) {
+        if (!((read_reg(EIR) & EIR_TXERIF) &&
+              (tsv.bytes[3] & 1 << 5) /*tsv.transmitLateCollision*/) ||
+            retry > 16U) {
             // there was some error but no LATECOL so we do not repeat
             BREAKORCONTINUE
         }
@@ -384,161 +503,67 @@ bool enc28j60::link_state_changed() {
 }
 
 int enc28j60::poll_ready(uint8_t reg, uint8_t mask, uint8_t val) {
-	TickType_t start = xTaskGetTickCount();
+    TickType_t start = xTaskGetTickCount();
 
-	/* 20 msec timeout read */
-	while ((read_reg(reg) & mask) != val) {
-		if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(20)) {
-			return -ETIMEDOUT;
-		}
-		asm("nop");
-	}
-	return 0;
+    /* 20 msec timeout read */
+    while ((read_reg(reg) & mask) != val) {
+        if ((xTaskGetTickCount() - start) > pdMS_TO_TICKS(20)) {
+            return -ETIMEDOUT;
+        }
+        asm("nop");
+    }
+    return 0;
 }
 
 /*
  * Wait until the PHY operation is complete.
  */
-int enc28j60::wait_phy_ready() {
-	return poll_ready(MISTAT, MISTAT_BUSY, 0) ? 0 : 1;
-}
-
+int enc28j60::wait_phy_ready() { return poll_ready(MISTAT, MISTAT_BUSY, 0) ? 0 : 1; }
 
 void enc28j60::txfifo_init(uint16_t start, uint16_t end) {
-	if (start > 0x1FFF || end > 0x1FFF || start > end) {
-		// printf("%s(%d, %d) TXFIFO bad parameters!\n",
-		// 		__func__, start, end);
-		return;
-	}
-	/* set transmit buffer start + end */
-	write_reg16(ETXST, start);      // ETXSTL
-	write_reg16(ETXND, end);        // ETXNDL
+    if (start > 0x1FFF || end > 0x1FFF || start > end) {
+        // printf("%s(%d, %d) TXFIFO bad parameters!\n",
+        // 		__func__, start, end);
+        return;
+    }
+    /* set transmit buffer start + end */
+    write_reg16(ETXST, start); // ETXSTL
+    write_reg16(ETXND, end);   // ETXNDL
 }
 
 void enc28j60::tx_clear(bool err) {
-	write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);   // Should be locked
-	// netif_wake_queue(ndev);
+    write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS); // Should be locked
+                                                          // netif_wake_queue(ndev);
 }
 
 /*
  * Calculate free space in RxFIFO
  */
 int enc28j60::get_free_rxfifo() {
-	int epkcnt, erxst, erxnd, erxwr, erxrd;
-	int free_space;
+    int epkcnt, erxst, erxnd, erxwr, erxrd;
+    int free_space;
 
-	lock();
-	epkcnt = read_reg(EPKTCNT);
-	if (epkcnt >= 255)
-		free_space = -1;
-	else {
-		erxst = read_reg16(ERXST);
-		erxnd = read_reg16(ERXND);
-		erxwr = read_reg16(ERXWRPT);
-		erxrd = read_reg16(ERXRDPT);
+    lock();
+    epkcnt = read_reg(EPKTCNT);
+    if (epkcnt >= 255)
+        free_space = -1;
+    else {
+        erxst = read_reg16(ERXST);
+        erxnd = read_reg16(ERXND);
+        erxwr = read_reg16(ERXWRPT);
+        erxrd = read_reg16(ERXRDPT);
 
-		if (erxwr > erxrd)
-			free_space = (erxnd - erxst) - (erxwr - erxrd);
-		else if (erxwr == erxrd)
-			free_space = (erxnd - erxst);
-		else
-			free_space = erxrd - erxwr - 1;
-	}
-	unlock();
-            //printf("%s() free_space = %d\n", __func__, free_space);
-	return free_space;
+        if (erxwr > erxrd)
+            free_space = (erxnd - erxst) - (erxwr - erxrd);
+        else if (erxwr == erxrd)
+            free_space = (erxnd - erxst);
+        else
+            free_space = erxrd - erxwr - 1;
+    }
+    unlock();
+    // printf("%s() free_space = %d\n", __func__, free_space);
+    return free_space;
 }
-
-bool enc28j60::enc28j60_irq(int irq) {
-	// struct enc28j60_net *priv = dev_id;
-	// struct net_device *ndev = priv->netdev;
-	int intflags, loop;
-
-	/* disable further interrupts */
-    write_op(ENC28J60_BIT_FIELD_CLR, EIE, EIE_INTIE);
-
-	do {
-		loop = 0;
-		intflags = read_reg(EIR);
-		/* DMA interrupt handler (not currently used) */
-		if ((intflags & EIR_DMAIF) != 0) {
-			loop++;
-            write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF);
-		}
-		/* LINK changed handler */
-		if ((intflags & EIR_LINKIF) != 0) {
-			loop++;
-			//enc28j60_check_link_status(ndev);
-			/* read PHIR to clear the flag */
-			read_phy(PHIR);
-		}
-		/* TX complete handler */
-		if (((intflags & EIR_TXIF) != 0) &&
-		    ((intflags & EIR_TXERIF) == 0)) {
-			bool err = false;
-			loop++;
-				//printf("intTX(%d)\n", loop);
-			
-			if (read_reg(ESTAT) & ESTAT_TXABRT) {
-					//printf("Tx Error (aborted)\n");
-				err = true;
-			}
-			tx_clear(err);
-			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXIF);
-		}
-		/* TX Error handler */
-		if ((intflags & EIR_TXERIF) != 0) {
-			//uint8_t tsv[TSV_SIZE];
-
-			loop++;
-				//printf()"intTXErr(%d)\n", loop);
-            write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
-			//enc28j60_read_tsv(priv, tsv);
-			// if (netif_msg_tx_err(priv))
-			// 	enc28j60_dump_tsv(priv, "Tx Error", tsv);
-			/* Reset TX logic */
-			lock();
-            write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
-            write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
-			txfifo_init(TXSTART_INIT, TXEND_INIT);
-			unlock();
-			/* Transmit Late collision check for retransmit */
-			// if (TSV_GETBIT(tsv, TSV_TXLATECOLLISION)) {
-			// 	if (netif_msg_tx_err(priv))
-			// 		netdev_printk(KERN_DEBUG, ndev,
-			// 			      "LateCollision TXErr (%d)\n",
-			// 			      priv->tx_retry_count);
-			// 	if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
-			// 		write_op(ENC28J60_BIT_FIELD_SET ECON1,
-			// 				   ECON1_TXRTS);
-			// 	else
-			// 		tx_clear(ndev, true);
-			// } else
-			// 	tx_clear(ndev, true);
-			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF);    //should be locked
-		}
-		/* RX Error handler */
-		if ((intflags & EIR_RXERIF) != 0) {
-			loop++;
-                printf("intRXErr(%d)\n", loop);
-			/* Check free FIFO space to flag RX overrun */
-			if (get_free_rxfifo() <= 0) {
-				//printf("RX Overrun\n");
-			}
-			write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF);        // should be locked
-		}
-		/* RX handler */
-		if (rx_interrupt())
-			loop++;
-	} while (loop);
-
-	/* re-enable interrupts */
-	write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE);     // should be locked
-    
-
-	return true;
-}
-
 
 /*
  * RX handler
@@ -549,16 +574,7 @@ bool enc28j60::enc28j60_irq(int irq) {
  * Returns how many packet processed.
  */
 int enc28j60::rx_interrupt() {
-	int pk_counter, ret;
-
-	pk_counter = read_reg(EPKTCNT);
-	ret = pk_counter;
-	while (pk_counter-- > 0)
-		//hw_rx();
-        printf("handler rx");
-
-	return ret;
+    return 1;
 }
-
 
 } // namespace drivers::enc28j60

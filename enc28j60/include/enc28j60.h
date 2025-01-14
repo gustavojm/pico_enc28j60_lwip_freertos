@@ -16,6 +16,8 @@
 
 #include <cinttypes>
 
+inline SemaphoreHandle_t irq_loop_sem;
+
 namespace drivers::enc28j60 {
 
 struct Config {
@@ -64,8 +66,10 @@ class enc28j60 {
     bool send_packet(const uint8_t *src, const size_t len);
     bool link_state_changed();
 
-  private:
+  public:
     Config &config_;
+
+    void irq_loop();
 
     void write_op(uint8_t operation, const uint8_t reg, const uint8_t data);
     uint8_t read_op(uint8_t operation, const uint8_t reg);
@@ -87,7 +91,7 @@ class enc28j60 {
     uint16_t next_packet_pointer;
     bool current_link_state;
 
-    private:
+    public:
     int wait_phy_ready();
     int poll_ready(uint8_t reg, uint8_t mask, uint8_t val);      
     void txfifo_init(uint16_t start, uint16_t end);
@@ -97,4 +101,5 @@ class enc28j60 {
     int rx_interrupt();
     
 };
+
 } // namespace drivers::enc28j60

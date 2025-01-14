@@ -13,4 +13,5 @@ target_include_directories(${NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
 target_link_libraries(${NAME} PRIVATE hal
                         FreeRTOS-Kernel-Heap4
                         pico_stdlib
+                        pico_lwip pico_lwip_freertos
                     )

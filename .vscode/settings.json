@@ -12,6 +12,7 @@
         "mutex": "cpp",
         "httpd_structs.h": "c",
         "random": "cpp",
-        "future": "cpp"
+        "future": "cpp",
+        "ostream": "cpp"
     },
 }

@@ -12,18 +12,24 @@
 #include "netif/etharp.h"
 
 #include "FreeRTOS.h"
+#include "pico/stdlib.h"
 #include "semphr.h"
 #include "task.h"
 #include <cstring>
+
+#include "gpio_wrapper.h"
+#include "spi.h"
+#include "utils.h"
 
 #ifdef ENC_DEBUG_ON
 #include <pico/stdio.h>
 #endif
 
+#define RED_LED 15
+
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 constexpr size_t ETHERNET_MTU = 1500;
 
-static netif net_if{};
 static SemaphoreHandle_t worker_sem{};
 
 void print_pbuf_payload(struct pbuf *p) {
@@ -44,8 +50,8 @@ err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
     auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
 
     struct pbuf *q;
-    for (q = p; q != nullptr; q = q->next) {        
-        //print_pbuf_payload(q);
+    for (q = p; q != nullptr; q = q->next) {
+        // print_pbuf_payload(q);
 
         if (!controller.send_packet(static_cast<uint8_t *>(q->payload), q->len)) {
             printf("Cannot send fragment of length %d\r\n", q->len);
@@ -62,6 +68,7 @@ err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
 static void tcpip_init_done(void *arg) { xSemaphoreGive(static_cast<SemaphoreHandle_t>(arg)); }
 
 static err_t enc_eth_netif_init(struct netif *netif) {
+
     netif->linkoutput = enc_eth_packet_output;
     netif->output = etharp_output;
     netif->mtu = ETHERNET_MTU;
@@ -69,7 +76,9 @@ static err_t enc_eth_netif_init(struct netif *netif) {
                    NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
     memcpy(netif->hwaddr, mac.data(), sizeof(netif->hwaddr));
     netif->hwaddr_len = sizeof(netif->hwaddr);
+
     printf("LWIP Init \n");
+
     return ERR_OK;
 }
 
@@ -87,93 +96,96 @@ static void enc_worker_thread(void *param) {
     pbuf *ptr = nullptr;
 
     while (true) {
-        if (eth_driver.link_state_changed()) {
-            if (eth_driver.is_link_up()) {
-                netif_set_link_up(&net_if);
-                printf("**** NETIF: LINK IS UP!\r\n");
-            } else {
-                netif_set_link_down(&net_if);
-                printf("**** NETIF: LINK IS DOWN!\r\n");
-            }
-        }
+//         if (eth_driver.link_state_changed()) {
+//             if (eth_driver.is_link_up()) {
+//                 netif_set_link_up(&net_if);
+//                 printf("**** NETIF: LINK IS UP!\r\n");
+//             } else {
+//                 netif_set_link_down(&net_if);
+//                 printf("**** NETIF: LINK IS DOWN!\r\n");
+//             }
+//         }
 
-        while (eth_driver.get_number_of_packets() > 0) {
-            auto packet_info = eth_driver.get_incoming_packet_info();
+//         while (eth_driver.get_number_of_packets() > 0) {
+//             auto packet_info = eth_driver.get_incoming_packet_info();
 
-            ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
-            if (ptr != nullptr) {
-                eth_driver.get_incoming_packet(packet_info, (uint8_t *)ptr->payload, packet_info.byte_count);
+//             ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
+//             if (ptr != nullptr) {
+//                 eth_driver.get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
+//                                                packet_info.byte_count);
 
-                LINK_STATS_INC(link.recv);
-#ifdef ENC_DEBUG_ON
-                //printf("Received packet with len %d!\r\n", 
-                //       packet_info.byte_count);
-#endif
+//                 LINK_STATS_INC(link.recv);
+// #ifdef ENC_DEBUG_ON
+//                 // printf("Received packet with len %d!\r\n",
+//                 //        packet_info.byte_count);
+// #endif
 
-                if (net_if.input(ptr, &net_if) != ERR_OK) {
-                    printf("Error processing frame input\r\n");
-                    pbuf_free(ptr);
-                }
-                
-            }
-        }
-        vTaskDelay(pdMS_TO_TICKS(20));
+//                 if (net_if.input(ptr, &net_if) != ERR_OK) {
+//                     printf("Error processing frame input\r\n");
+//                     pbuf_free(ptr);
+//                 }
+//             }
+//         }
+         vTaskDelay(pdMS_TO_TICKS(20));
     }
+}
+
+extern "C" void enc28j60_irq_callback(uint gpio, uint32_t events) {
+    static bool state = 1;
+    gpio_put(RED_LED, state);
+    state = !state;
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Give a semaphore for irq_loop
+    xSemaphoreGiveFromISR(irq_loop_sem, &xHigherPriorityTaskWoken);
+    gpio_acknowledge_irq(gpio, events);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+    // Acknowledge the interrupt
+    return;
 }
 
 err_t enc_driver_os_init() {
-#if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    /** @note This should be bound to one core during initialisation */
-    TaskHandle_t task_handle = xTaskGetCurrentTaskHandle();
-    UBaseType_t affinity = vTaskCoreAffinityGet(task_handle);
-    vTaskCoreAffinitySet(task_handle, 1 << portGET_CORE_ID());
-#endif
 
-    SemaphoreHandle_t init_sem = xSemaphoreCreateBinary();
-    tcpip_init(tcpip_init_done, init_sem);
-    xSemaphoreTake(init_sem, portMAX_DELAY);
+    constexpr uint8_t MISO_PIN = 16;
+    constexpr uint8_t MOSI_PIN = 19;
+    constexpr uint8_t CLK_PIN = 18;
+    constexpr uint8_t ENC_IRQ = 22;
 
-    worker_sem = xSemaphoreCreateBinary();
-    TaskHandle_t enc_task_handle{};
+    static drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
+    static drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
+    static drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
 
-    if (xTaskCreate(enc_worker_thread, "enc_worker", 1024, nullptr, tskIDLE_PRIORITY + 4,
-                    &enc_task_handle) != pdPASS) {
-        return ERR_ABRT;
+    EncRstPin.init();
+    EncCsPin.init();
+
+    static drivers::spi::SpiWrapper spi0_{spi0Config};
+    spi0_.init();
+
+    static drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, ENC_IRQ, spi0_};
+    static drivers::enc28j60::enc28j60 eth_driver{EncConfig};
+    if (!eth_driver.init(mac)) {
+        hal::panic();
     }
 
-#if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    vTaskCoreAffinitySet(enc_task_handle, NETWORKING_CORE_ID);
-#endif
-
-#if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    vTaskCoreAffinitySet(task_handle, affinity);
-#endif
-
-    return ERR_OK;
-}
-
-err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
-#if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    TaskHandle_t task_handle = xTaskGetCurrentTaskHandle();
-    UBaseType_t affinity = vTaskCoreAffinityGet(task_handle);
-    // we must bind the main task to one core during init
-    vTaskCoreAffinitySet(task_handle, 1 << portGET_CORE_ID());
-#endif
+    while (!eth_driver.is_link_up())
+        ;
 
 // Define your IP address, netmask, and gateway
-#define IP_ADDR   "10.30.113.199"
-#define NETMASK   "255.255.255.0"
-#define GATEWAY   "10.30.113.1"
+#define IP_ADDR "10.30.113.199"
+#define NETMASK "255.255.255.0"
+#define GATEWAY "10.30.113.1"
 
-   ip4_addr_t ipaddr, netmask, gw;
+    ip4_addr_t ipaddr, netmask, gw;
 
     // Convert IP strings to ip4_addr_t
     IP4_ADDR(&ipaddr, 10, 30, 113, 199);
     IP4_ADDR(&netmask, 255, 255, 255, 0);
     IP4_ADDR(&gw, 10, 30, 113, 1);
 
-    if (netif_add(&net_if, &ipaddr, &netmask, &gw,
-                  static_cast<void *>(&eth_driver), enc_eth_netif_init, tcpip_input) == nullptr) {
+    if (netif_add(&net_if, &ipaddr, &netmask, &gw, static_cast<void *>(&eth_driver),
+                  enc_eth_netif_init, tcpip_input) == nullptr) {
         printf("netif_add failed\n");
         return ERR_ABRT;
     }
@@ -189,14 +201,52 @@ err_t enc_driver_lwip_init(drivers::enc28j60::enc28j60 &eth_driver) {
 
     netif_set_default(&net_if);
     netif_set_up(&net_if);
-    //dhcp_start(&net_if);
+    // dhcp_start(&net_if);
 
-    //printf("netif DHCP STARTED\n");
+    // printf("netif DHCP STARTED\n");
 
-#if configUSE_CORE_AFFINITY && configNUM_CORES > 1
-    vTaskCoreAffinitySet(task_handle, affinity);
+    SemaphoreHandle_t init_sem = xSemaphoreCreateBinary();
+    tcpip_init(tcpip_init_done, init_sem);
+    xSemaphoreTake(init_sem, portMAX_DELAY);
+
+    worker_sem = xSemaphoreCreateBinary();
+    TaskHandle_t enc_worker_task_handle{};
+
+    if (xTaskCreate(enc_worker_thread, "enc_worker", 2048, nullptr, tskIDLE_PRIORITY + 4,
+                    &enc_worker_task_handle) != pdPASS) {
+        return ERR_ABRT;
+    }
+
+    // drivers::enc28j60::enc28j60 *eth_driver =
+    //         static_cast<drivers::enc28j60::enc28j60 *>(net_if.state);
+
+    irq_loop_sem = xSemaphoreCreateBinary();
+
+    TaskHandle_t irq_loop_task_handle{};
+    if (xTaskCreate([](void *me) { static_cast<drivers::enc28j60::enc28j60 *>(me)->irq_loop(); },
+                    "irq_loop", 2048, (void *)&eth_driver, configMAX_PRIORITIES - 1,
+                    &irq_loop_task_handle) != pdPASS) {
+        return ERR_ABRT;
+    }
+
+    gpio_init(RED_LED);
+    gpio_set_dir(RED_LED, GPIO_OUT);
+
+#define IRQ_GPIO 22
+    gpio_init(IRQ_GPIO);
+    gpio_set_dir(IRQ_GPIO, GPIO_IN);
+    gpio_pull_up(IRQ_GPIO);
+    // gpio_disable_pulls(IRQ_GPIO);
+    gpio_set_irq_enabled_with_callback(IRQ_GPIO, GPIO_IRQ_EDGE_FALL, true, &enc28j60_irq_callback);
+
+#if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1
+    vTaskCoreAffinitySet(enc_worker_task_handle, NETWORKING_CORE_ID);
+    vTaskCoreAffinitySet(irq_loop_task_handle, NETWORKING_CORE_ID);
 #endif
+
     xSemaphoreGive(worker_sem);
 
     return ERR_OK;
 }
+
+err_t enc_driver_lwip_init() { return ERR_OK; }

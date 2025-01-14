@@ -15,19 +15,6 @@
 void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
 #endif
 
-constexpr uint8_t MISO_PIN = 16;
-constexpr uint8_t MOSI_PIN = 19;
-constexpr uint8_t CLK_PIN = 18;
-constexpr uint8_t ENC_IRQ = 22;
-
-drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
-drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
-drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
-drivers::spi::SpiWrapper spi0_{spi0Config};
-
-drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, ENC_IRQ, spi0_};
-drivers::enc28j60::enc28j60 eth_driver{EncConfig};
-
 //drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
 
 #include "tcp_server_command.h"
@@ -35,16 +22,8 @@ drivers::enc28j60::enc28j60 eth_driver{EncConfig};
 tcp_server_command cmd_server(456);
 
 void main_task(void *params) {
-    if (not eth_driver.init(mac)) {
-        hal::panic();
-    }
-
-    while (not eth_driver.is_link_up())
-        ;
-
+ 
     enc_driver_os_init();
-    
-    enc_driver_lwip_init(eth_driver);
 
     cmd_server.start();
     httpd_init();
@@ -52,27 +31,23 @@ void main_task(void *params) {
 
     while (true) {
         vTaskDelay(100);
-        vTaskDelay(100);
     }
 }
 
 int main() {
     stdio_init_all();
 
-    EncRstPin.init();
-    EncCsPin.init();
-    spi0_.init();
+    TaskHandle_t task_handle{};
+    xTaskCreate(main_task, "TestMainThread", configMINIMAL_STACK_SIZE * 4, nullptr,
+                tskIDLE_PRIORITY + 1, &task_handle);
 
-    TaskHandle_t task{};
-    xTaskCreate(main_task, "TestMainThread", configMINIMAL_STACK_SIZE, nullptr,
-                tskIDLE_PRIORITY + 1, &task);
-
-#if NO_SYS && configUSE_CORE_AFFINITY && configNUM_CORES > 1
+#if NO_SYS && configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1
     // If NO_SYS is set, then we must bind the main task to one core (at least while the init is
     // called)
-    vTaskCoreAffinitySet(task, 1);
+    vTaskCoreAffinitySet(task_handle, 1);
 #endif
     vTaskStartScheduler();
 
     return 0;
 }
+
