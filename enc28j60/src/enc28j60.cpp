@@ -35,98 +35,130 @@ void enc28j60::irq_loop() {
             write_op(ENC28J60_BIT_FIELD_CLR, EIE, EIE_INTIE);
 
             // do {
-            loop = 0;
-            intflags = read_reg(EIR);
-            /* DMA interrupt handler (not currently used) */
-            if ((intflags & EIR_DMAIF) != 0) {
-                loop++;
-                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF);
-            }
-            /* LINK changed handler */
-            if ((intflags & EIR_LINKIF) != 0) {
-                loop++;
-                // enc28j60_check_link_status(ndev);
-                /* read PHIR to clear the flag */
-                read_phy(PHIR);
-            }
-            /* TX complete handler */
-            if (((intflags & EIR_TXIF) != 0) && ((intflags & EIR_TXERIF) == 0)) {
-                bool err = false;
-                loop++;
-                printf("intTX(%d)\n", loop);
+//             loop = 0;
+//             intflags = read_reg(EIR);
+//             /* DMA interrupt handler (not currently used) */
+//             if ((intflags & EIR_DMAIF) != 0) {
+//                 loop++;
+//                 write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_DMAIF);
+//             }
+//             /* LINK changed handler */
+//             if ((intflags & EIR_LINKIF) != 0) {
+//                 loop++;
+//                 // enc28j60_check_link_status(ndev);
+//                 /* read PHIR to clear the flag */
+//                 read_phy(PHIR);
+//             }
+//             /* TX complete handler */
+//             if (((intflags & EIR_TXIF) != 0) && ((intflags & EIR_TXERIF) == 0)) {
+//                 bool err = false;
+//                 loop++;
+//                 printf("intTX(%d)\n", loop);
 
-                if (read_reg(ESTAT) & ESTAT_TXABRT) {
-                    // printf("Tx Error (aborted)\n");
-                    err = true;
-                }
-                tx_clear(err);
-                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXIF);
-            }
-            /* TX Error handler */
-            if ((intflags & EIR_TXERIF) != 0) {
-                // uint8_t tsv[TSV_SIZE];
+//                 if (read_reg(ESTAT) & ESTAT_TXABRT) {
+//                     // printf("Tx Error (aborted)\n");
+//                     err = true;
+//                 }
+//                 tx_clear(err);
+//                 write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXIF);
+//             }
+//             /* TX Error handler */
+//             if ((intflags & EIR_TXERIF) != 0) {
+//                 // uint8_t tsv[TSV_SIZE];
 
-                loop++;
-                // printf()"intTXErr(%d)\n", loop);
-                write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
-                // enc28j60_read_tsv(priv, tsv);
-                //  if (netif_msg_tx_err(priv))
-                //  	enc28j60_dump_tsv(priv, "Tx Error", tsv);
-                    printf("TX Error");
-                /* Reset TX logic */
-                lock();
-                write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
-                write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
-                txfifo_init(TXSTART_INIT, TXEND_INIT);
-                unlock();
-                /* Transmit Late collision check for retransmit */
-                // if (TSV_GETBIT(tsv, TSV_TXLATECOLLISION)) {
-                // 	if (netif_msg_tx_err(priv))
-                // 		netdev_printk(KERN_DEBUG, ndev,
-                // 			      "LateCollision TXErr (%d)\n",
-                // 			      priv->tx_retry_count);
-                // 	if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
-                // 		write_op(ENC28J60_BIT_FIELD_SET ECON1,
-                // 				   ECON1_TXRTS);
-                // 	else
-                // 		tx_clear(ndev, true);
-                // } else
-                // 	tx_clear(ndev, true);
-                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF); // should be
-                                                                              // locked
-            }
-            /* RX Error handler */
-            if ((intflags & EIR_RXERIF) != 0) {
-                loop++;
-                printf("intRXErr(%d)\n", loop);
-                /* Check free FIFO space to flag RX overrun */
-                if (get_free_rxfifo() <= 0) {
-                    printf("RX Overrun\n");
-                }
-                write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF); // should be locked
-            }
-            /* RX handler */
-            int pk_counter = read_reg(EPKTCNT);
-            while (pk_counter-- > 0) {
-                auto packet_info = get_incoming_packet_info();
+//                 loop++;
+//                 // printf()"intTXErr(%d)\n", loop);
+//                 write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRTS);
+//                 // enc28j60_read_tsv(priv, tsv);
+//                 //  if (netif_msg_tx_err(priv))
+//                 //  	enc28j60_dump_tsv(priv, "Tx Error", tsv);
+//                     printf("TX Error");
+//                 /* Reset TX logic */
+//                 lock();
+//                 write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
+//                 write_op(ENC28J60_BIT_FIELD_CLR, ECON1, ECON1_TXRST);
+//                 txfifo_init(TXSTART_INIT, TXEND_INIT);
+//                 unlock();
+//                 /* Transmit Late collision check for retransmit */
+//                 // if (TSV_GETBIT(tsv, TSV_TXLATECOLLISION)) {
+//                 // 	if (netif_msg_tx_err(priv))
+//                 // 		netdev_printk(KERN_DEBUG, ndev,
+//                 // 			      "LateCollision TXErr (%d)\n",
+//                 // 			      priv->tx_retry_count);
+//                 // 	if (priv->tx_retry_count++ < MAX_TX_RETRYCOUNT)
+//                 // 		write_op(ENC28J60_BIT_FIELD_SET ECON1,
+//                 // 				   ECON1_TXRTS);
+//                 // 	else
+//                 // 		tx_clear(ndev, true);
+//                 // } else
+//                 // 	tx_clear(ndev, true);
+//                 write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_TXERIF | EIR_TXIF); // should be
+//                                                                               // locked
+//             }
+//             /* RX Error handler */
+//             if ((intflags & EIR_RXERIF) != 0) {
+//                 loop++;
+//                 printf("intRXErr(%d)\n", loop);
+//                 /* Check free FIFO space to flag RX overrun */
+//                 if (get_free_rxfifo() <= 0) {
+//                     printf("RX Overrun\n");
+//                 }
+//                 write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF); // should be locked
+//             }
+//             /* RX handler */
+//             int pk_counter = read_reg(EPKTCNT);
+//             while (pk_counter-- > 0) {
+//                 auto packet_info = get_incoming_packet_info();
 
-                pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
-                if (ptr != nullptr) {
-                    get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
-                                        packet_info.byte_count);
+//                 pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
+//                 if (ptr != nullptr) {
+//                     get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
+//                                         packet_info.byte_count);
 
-                    LINK_STATS_INC(link.recv);
+//                     LINK_STATS_INC(link.recv);
+// #ifdef ENC_DEBUG_ON
+//                     printf("Received packet with len %d!\r\n",
+//                             packet_info.byte_count);
+// #endif
+
+//                     if (net_if.input(ptr, &net_if) != ERR_OK) {
+//                         printf("Error processing frame input\r\n");
+//                         pbuf_free(ptr);
+//                     }
+//                 }
+//             }
+
+        if (link_state_changed()) {
+            if (is_link_up()) {
+                netif_set_link_up(&net_if);
+                printf("**** NETIF: LINK IS UP!\r\n");
+            } else {
+                netif_set_link_down(&net_if);
+                printf("**** NETIF: LINK IS DOWN!\r\n");
+            }
+        }
+
+        while (get_number_of_packets() > 0) {
+            auto packet_info = get_incoming_packet_info();
+
+            pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
+            if (ptr != nullptr) {
+                get_incoming_packet(packet_info, (uint8_t *)ptr->payload, packet_info.byte_count);
+
+                LINK_STATS_INC(link.recv);
 #ifdef ENC_DEBUG_ON
-                    printf("Received packet with len %d!\r\n",
-                            packet_info.byte_count);
+                //printf("Received packet with len %d!\r\n", 
+                //       packet_info.byte_count);
 #endif
 
-                    if (net_if.input(ptr, &net_if) != ERR_OK) {
-                        printf("Error processing frame input\r\n");
-                        pbuf_free(ptr);
-                    }
+                if (net_if.input(ptr, &net_if) != ERR_OK) {
+                    printf("Error processing frame input\r\n");
+                    pbuf_free(ptr);
                 }
+                
             }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
 
             //} while (loop);
 
