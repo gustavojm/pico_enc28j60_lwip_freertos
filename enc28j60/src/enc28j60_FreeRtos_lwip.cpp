@@ -1,4 +1,4 @@
-#include "enc_os_lwip_glue.h"
+#include "enc28j60_FreeRtos_lwip.h"
 #include "enc28j60.h"
 #include "lwip/err.h"
 

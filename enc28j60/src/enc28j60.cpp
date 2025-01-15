@@ -4,7 +4,7 @@
 #include "netif/etharp.h"
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
-#include "enc_os_lwip_glue.h"
+#include "enc28j60_FreeRtos_lwip.h"
 #include "errno.h"
 #include "pico/stdlib.h"
 #include "stdio.h"

@@ -31,8 +31,8 @@ add_executable(${PROJECT_NAME}
         tcp_server_command.cpp
         httpd.c
         fs.c
-        ${CMAKE_CURRENT_SOURCE_DIR}/app/enc_os_lwip_glue.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/app/hooks.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/enc28j60/src/enc28j60_FreeRtos_lwip.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/hooks.c
         )
 
 # Create map/bin/hex/uf2 files
@@ -54,7 +54,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
 
 
 target_include_directories(${PROJECT_NAME} PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/app
+        ${CMAKE_CURRENT_SOURCE_DIR}/inc
         )
 
 # disable usb output, disable uart output

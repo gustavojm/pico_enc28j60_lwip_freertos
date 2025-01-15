@@ -6,7 +6,7 @@ add_library(${NAME} ${CMAKE_CURRENT_SOURCE_DIR}/src/enc28j60.cpp)
 
 target_include_directories(${NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include
                                             ${FREERTOS_KERNEL_PATH}/include
-                                            ../app
+                                            ../inc
                                             )
 
 

@@ -2,7 +2,7 @@
 #include "task.h"
 
 #include "enc28j60.h"
-#include "enc_os_lwip_glue.h"
+#include "enc28j60_FreeRtos_lwip.h"
 #include "gpio_wrapper.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
