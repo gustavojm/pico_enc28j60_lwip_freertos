@@ -2,7 +2,7 @@
 #include "igpio.h"
 #include <cstdint>
 
-namespace drivers::gpio {
+namespace drivers {
 
 class Gpio : public IGpio {
   public:
@@ -16,4 +16,4 @@ class Gpio : public IGpio {
     const uint32_t dir_;
 };
 
-} // namespace drivers::gpio
+} // namespace drivers

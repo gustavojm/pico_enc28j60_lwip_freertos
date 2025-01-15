@@ -1,6 +1,7 @@
 #include "FreeRTOS.h"
 #include "task.h"
 
+#include "netif/etharp.h"
 #include "enc28j60.h"
 #include "enc28j60_registers.h"
 #include "enc_os_lwip_glue.h"
@@ -8,25 +9,17 @@
 #include "pico/stdlib.h"
 #include "stdio.h"
 #include "utils.h"
-#include "lwip/netif.h"
+#include <cstring>
 
-namespace {
-constexpr uint16_t RXSTART_INIT = 0x0;
-constexpr uint16_t RXSTOP_INIT = (0x1FFF - 0x0600 - 1);
-constexpr uint16_t TXSTART_INIT = (0x1FFF - 0x0600);
-constexpr uint16_t TXEND_INIT = 0x1FFF;
-constexpr uint16_t TXSTOP_INIT = 0x1FFF;
-constexpr uint32_t AFTER_RESET_DELAY_MS = 100;
-} // namespace
-namespace drivers::enc28j60 {
-
+namespace drivers {
+    
 enc28j60::enc28j60(Config &config) : config_{config} {}
 
 void enc28j60::lock() { xSemaphoreTakeRecursive(config_.mutex, portMAX_DELAY); }
 
 void enc28j60::unlock() { xSemaphoreGiveRecursive(config_.mutex); }
 
-void enc28j60::irq_loop() {
+void enc28j60::irq_deferred_handler() {
 
     while (true) {
         if (xSemaphoreTake(irq_loop_sem, portMAX_DELAY) == pdPASS) {
@@ -72,6 +65,7 @@ void enc28j60::irq_loop() {
                 //  enc28j60_read_tsv(priv, tsv);                
                 //  enc28j60_dump_tsv(priv, "Tx Error", tsv);
                     printf("TX Error");
+                    LINK_STATS_INC(link.err);
                 /* Reset TX logic */
                 lock();
                 write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
@@ -153,11 +147,11 @@ bool enc28j60::init(const MacAddress &mac_address) {
     config_.Cs.set();
 
     config_.Rst.reset();
-    hal::sleep_milli(AFTER_RESET_DELAY_MS);
+    vTaskDelay(pdMS_TO_TICKS(AFTER_RESET_DELAY_MS));
     config_.Rst.set();
 
     write_op(ENC28J60_SOFT_RESET, 0x00, ENC28J60_SOFT_RESET);
-    hal::sleep_milli(2);
+    vTaskDelay(pdMS_TO_TICKS(2));
     /** Oscillator ready */
     while (!(read_reg(ESTAT) & ESTAT_CLKRDY))
         ;
@@ -213,6 +207,7 @@ bool enc28j60::init(const MacAddress &mac_address) {
     write_reg(MAADR2, mac_address[3]);
     write_reg(MAADR1, mac_address[4]);
     write_reg(MAADR0, mac_address[5]);
+    mac_ = mac_address;
 
     write_phy(PHCON2, PHCON2_HDLDIS);
 
@@ -576,16 +571,41 @@ int enc28j60::get_free_rxfifo() {
     return free_space;
 }
 
-/*
- * RX handler
- * Ignore PKTIF because is unreliable! (Look at the errata datasheet)
- * Check EPKTCNT is the suggested workaround.
- * We don't need to clear interrupt flag, automatically done when
- * enc28j60_hw_rx() decrements the packet counter.
- * Returns how many packet processed.
- */
-int enc28j60::rx_interrupt() {
-    return 1;
+err_t enc28j60::eth_packet_output(struct netif *netif, struct pbuf *p) {
+    LINK_STATS_INC(link.xmit);
+    drivers::enc28j60 *me = static_cast<drivers::enc28j60 *>(netif->state);
+
+    struct pbuf *q;
+    for (q = p; q != nullptr; q = q->next) {
+        // print_pbuf_payload(q);
+
+        if (!me->send_packet(static_cast<uint8_t *>(q->payload), q->len)) {
+            printf("Cannot send fragment of length %d\r\n", q->len);
+            return ERR_ABRT;
+        }
+    }
+    //
+#if ENC_DEBUG_ON
+    printf("Sent packet with len %d[%d]!\r\n", p->len, p->tot_len);
+#endif
+    return ERR_OK;
+}
+
+
+err_t enc28j60::eth_netif_init(struct netif *netif) {    
+    drivers::enc28j60 *me = static_cast<drivers::enc28j60 *>(netif->state);
+
+    netif->linkoutput = drivers::enc28j60::eth_packet_output;
+    netif->output = etharp_output;
+    netif->mtu = ETHERNET_MTU;
+    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
+                   NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
+    memcpy(netif->hwaddr, me->mac_.data(), sizeof(netif->hwaddr));
+    netif->hwaddr_len = sizeof(netif->hwaddr);
+
+    printf("LWIP Init \n");
+
+    return ERR_OK;
 }
 
 } // namespace drivers::enc28j60

@@ -3,21 +3,20 @@
 #include "hardware/spi.h"
 #include "ispi.h"
 
-namespace drivers::spi {
-
-struct Config {
-    spi_inst_t *spi_handle;
-    uint8_t CLK_Pin;
-    uint8_t MOSI_Pin;
-    uint8_t MISO_Pin;
-    uint32_t baudrate_Hz;
-    spi_cpol_t clock_polarization = SPI_CPOL_0;
-    spi_cpha_t clock_phase = SPI_CPHA_0;
-    spi_order_t bit_order = SPI_MSB_FIRST;
-};
+namespace drivers {
 
 class SpiWrapper : public ISpi {
   public:
+    struct Config {
+        spi_inst_t *spi_handle;
+        uint8_t CLK_Pin;
+        uint8_t MOSI_Pin;
+        uint8_t MISO_Pin;
+        uint32_t baudrate_Hz;
+        spi_cpol_t clock_polarization = SPI_CPOL_0;
+        spi_cpha_t clock_phase = SPI_CPHA_0;
+        spi_order_t bit_order = SPI_MSB_FIRST;
+    };
     explicit SpiWrapper(const Config &confiig);
 
     bool init();
@@ -30,4 +29,4 @@ class SpiWrapper : public ISpi {
     const Config &config_;
 };
 
-} // namespace drivers::spi
+} // namespace drivers

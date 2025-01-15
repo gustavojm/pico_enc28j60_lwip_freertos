@@ -1,7 +1,7 @@
 #include "spi.h"
 #include "hardware/gpio.h"
 
-namespace drivers::spi {
+namespace drivers {
 
 SpiWrapper::SpiWrapper(const Config &confiig) : config_{confiig} {}
 
@@ -41,4 +41,4 @@ bool SpiWrapper::transceive(const uint8_t *src, uint8_t *dst, const size_t tx_le
     return true;
 }
 
-}; // namespace drivers::spi
+}; // namespace drivers

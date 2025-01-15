@@ -26,57 +26,9 @@
 #endif
 
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
-constexpr size_t ETHERNET_MTU = 1500;
 
-void print_pbuf_payload(struct pbuf *p) {
-    struct pbuf *current = p;
-    while (current != NULL) {
-        // Print the current pbuf's payload as a string (ensure it's null-terminated if needed)
-        printf("Payload (len=%d): ", current->len);
-        fwrite(current->payload, 1, current->len, stdout);
-        printf("\n");
-
-        // Move to the next pbuf in the chain
-        current = current->next;
-    }
-}
-
-err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
-    LINK_STATS_INC(link.xmit);
-    auto &controller = *static_cast<drivers::enc28j60::enc28j60 *>(netif->state);
-
-    struct pbuf *q;
-    for (q = p; q != nullptr; q = q->next) {
-        // print_pbuf_payload(q);
-
-        if (!controller.send_packet(static_cast<uint8_t *>(q->payload), q->len)) {
-            printf("Cannot send fragment of length %d\r\n", q->len);
-            return ERR_ABRT;
-        }
-    }
-    //
-#if ENC_DEBUG_ON
-    printf("Sent packet with len %d[%d]!\r\n", p->len, p->tot_len);
-#endif
-    return ERR_OK;
-}
-
+constexpr drivers::enc28j60::MacAddress mac{0x0a, 0xbd, 0x7d, 0x95, 0xd3, 0xa5};
 static void tcpip_init_done(void *arg) { xSemaphoreGive(static_cast<SemaphoreHandle_t>(arg)); }
-
-static err_t enc_eth_netif_init(struct netif *netif) {
-
-    netif->linkoutput = enc_eth_packet_output;
-    netif->output = etharp_output;
-    netif->mtu = ETHERNET_MTU;
-    netif->flags = NETIF_FLAG_BROADCAST | NETIF_FLAG_ETHARP | NETIF_FLAG_ETHERNET |
-                   NETIF_FLAG_IGMP | NETIF_FLAG_MLD6;
-    memcpy(netif->hwaddr, mac.data(), sizeof(netif->hwaddr));
-    netif->hwaddr_len = sizeof(netif->hwaddr);
-
-    printf("LWIP Init \n");
-
-    return ERR_OK;
-}
 
 static void netif_status_callback(struct netif *netif) {
     printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
@@ -84,32 +36,28 @@ static void netif_status_callback(struct netif *netif) {
 
 static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
 
-
-err_t enc_driver_os_init() {
+err_t enc28j60_driver_os_init() {
 
     constexpr uint8_t MISO_PIN = 16;
     constexpr uint8_t MOSI_PIN = 19;
     constexpr uint8_t CLK_PIN = 18;
     constexpr uint8_t ENC_IRQ = 22;
 
-    static drivers::gpio::Gpio EncRstPin{21, GPIO_OUT};
-    static drivers::gpio::Gpio EncCsPin{17, GPIO_OUT};
-    static drivers::spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
+    static drivers::Gpio EncRstPin{21, GPIO_OUT};
+    static drivers::Gpio EncCsPin{17, GPIO_OUT};
+    static drivers::SpiWrapper::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
 
     EncRstPin.init();
     EncCsPin.init();
 
-    static drivers::spi::SpiWrapper spi0_{spi0Config};
+    static drivers::SpiWrapper spi0_{spi0Config};
     spi0_.init();
 
     static drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, ENC_IRQ, spi0_};
-    static drivers::enc28j60::enc28j60 eth_driver{EncConfig};
+    static drivers::enc28j60 eth_driver{EncConfig};
     if (!eth_driver.init(mac)) {
         hal::panic();
     }
-
-    while (!eth_driver.is_link_up())
-        ;
 
     ip4_addr_t ipaddr, netmask, gw;
     IP4_ADDR(&ipaddr, 10, 30, 113, 199);
@@ -117,7 +65,7 @@ err_t enc_driver_os_init() {
     IP4_ADDR(&gw, 10, 30, 113, 1);
 
     if (netif_add(&net_if, &ipaddr, &netmask, &gw, static_cast<void *>(&eth_driver),
-                  enc_eth_netif_init, tcpip_input) == nullptr) {
+                  drivers::enc28j60::eth_netif_init, tcpip_input) == nullptr) {
         printf("netif_add failed\n");
         return ERR_ABRT;
     }
@@ -134,7 +82,6 @@ err_t enc_driver_os_init() {
     netif_set_default(&net_if);
     netif_set_up(&net_if);
     // dhcp_start(&net_if);
-
     // printf("netif DHCP STARTED\n");
 
     SemaphoreHandle_t init_sem = xSemaphoreCreateBinary();
@@ -144,7 +91,7 @@ err_t enc_driver_os_init() {
     irq_loop_sem = xSemaphoreCreateBinary();
 
     TaskHandle_t irq_loop_task_handle{};
-    if (xTaskCreate([](void *me) { static_cast<drivers::enc28j60::enc28j60 *>(me)->irq_loop(); },
+    if (xTaskCreate([](void *me) { static_cast<drivers::enc28j60 *>(me)->irq_deferred_handler(); },
                     "irq_loop", 2048, (void *)&eth_driver, configMAX_PRIORITIES - 1,
                     &irq_loop_task_handle) != pdPASS) {
         return ERR_ABRT;
@@ -158,5 +105,3 @@ err_t enc_driver_os_init() {
 
     return ERR_OK;
 }
-
-err_t enc_driver_lwip_init() { return ERR_OK; }

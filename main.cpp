@@ -11,23 +11,16 @@
 
 #include "lwip/apps/httpd.h"
 
-#if !NO_SYS
-void hal::sleep_milli(const uint32_t time_ms) { vTaskDelay(pdMS_TO_TICKS(time_ms)); }
-#endif
-
-//drivers::gpio::Gpio BoardLed{LED_PIN, GPIO_OUT};
-
 #include "tcp_server_command.h"
 
 tcp_server_command cmd_server(456);
 
 void main_task(void *params) {
  
-    enc_driver_os_init();
+    enc28j60_driver_os_init();
 
     cmd_server.start();
     httpd_init();
-
 
     while (true) {
         vTaskDelay(100);
