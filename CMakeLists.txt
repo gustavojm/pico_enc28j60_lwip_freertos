@@ -16,7 +16,7 @@ pico_sdk_init()
 
 add_subdirectory(enc28j60)
 add_subdirectory(hal)
-add_compile_definitions(ENC_DEBUG_ON=0 NO_SYS=0)
+add_compile_definitions(ENC_DEBUG_ON=1 NO_SYS=0)
 
 include(FetchContent)
 FetchContent_Declare(ArduinoJson

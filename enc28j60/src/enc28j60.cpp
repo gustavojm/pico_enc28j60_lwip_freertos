@@ -126,8 +126,8 @@ void enc28j60::irq_loop() {
 
                     LINK_STATS_INC(link.recv);
 #ifdef ENC_DEBUG_ON
-                    // printf("Received packet with len %d!\r\n",
-                    //        packet_info.byte_count);
+                    printf("Received packet with len %d!\r\n",
+                            packet_info.byte_count);
 #endif
 
                     if (net_if.input(ptr, &net_if) != ERR_OK) {
@@ -143,6 +143,18 @@ void enc28j60::irq_loop() {
             write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE); // should be locked
         }
     }
+}
+
+extern "C" void enc28j60_irq_callback(uint gpio, uint32_t events) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+    // Give a semaphore for irq_loop
+    xSemaphoreGiveFromISR(irq_loop_sem, &xHigherPriorityTaskWoken);
+    gpio_acknowledge_irq(gpio, events);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+    // Acknowledge the interrupt
+    return;
 }
 
 bool enc28j60::init(const MacAddress &mac_address) {
@@ -223,20 +235,60 @@ bool enc28j60::init(const MacAddress &mac_address) {
     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
 
     uint8_t rev = read_reg(EREVID);
+    unlock();
 
-    // Enabling Interrupts
-    write_phy(PHIE, PHIE_PGEIE | PHIE_PLNKIE);
+    return rev > 0;
+}
+
+void enc28j60::enable_interupts() {
+        // Enabling Interrupts
 
     lock();
+    #define IRQ_GPIO 22
+    gpio_init(IRQ_GPIO);
+    gpio_set_dir(IRQ_GPIO, GPIO_IN);
+    gpio_pull_up(IRQ_GPIO);
+    // gpio_disable_pulls(IRQ_GPIO);
+    gpio_set_irq_enabled_with_callback(IRQ_GPIO, GPIO_IRQ_EDGE_FALL, true, &enc28j60_irq_callback);
+
+    write_phy(PHIE, PHIE_PGEIE | PHIE_PLNKIE);
+    
     write_op(ENC28J60_BIT_FIELD_CLR, EIR,
              EIR_DMAIF | EIR_LINKIF | EIR_TXIF | EIR_TXERIF | EIR_RXERIF | EIR_PKTIF);
     write_reg(EIE, EIE_INTIE | EIE_PKTIE | EIE_LINKIE | EIE_TXIE | EIE_TXERIE | EIE_RXERIE);
 
     /* enable receive logic */
     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
-    unlock();
+    write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE); // should be locked
 
-    return rev > 0;
+    int pk_counter, ret;
+
+    pk_counter = read_reg(EPKTCNT);
+    ret = pk_counter;
+    while (pk_counter-- > 0) {
+        // hw_rx();
+        // printf("handler rx");
+
+        auto packet_info = get_incoming_packet_info();
+
+        pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
+        if (ptr != nullptr) {
+            get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
+                                packet_info.byte_count);
+
+            LINK_STATS_INC(link.recv);
+#ifdef ENC_DEBUG_ON
+            printf("Received packet with len %d!\r\n",
+                    packet_info.byte_count);
+#endif
+
+            if (net_if.input(ptr, &net_if) != ERR_OK) {
+                printf("Error processing frame input\r\n");
+                pbuf_free(ptr);
+            }
+        }
+    }
+    unlock();
 }
 
 bool enc28j60::is_link_up() { return (read_phy(PHSTAT2) & PHSTAT2_LSTAT); }

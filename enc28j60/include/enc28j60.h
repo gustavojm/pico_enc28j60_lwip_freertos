@@ -99,6 +99,7 @@ class enc28j60 {
     void tx_clear(bool err);
     int get_free_rxfifo();
     int rx_interrupt();
+    void enable_interupts();
     
 };
 

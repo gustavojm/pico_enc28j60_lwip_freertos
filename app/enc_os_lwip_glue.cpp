@@ -25,8 +25,6 @@
 #include <pico/stdio.h>
 #endif
 
-#define RED_LED 15
-
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 constexpr size_t ETHERNET_MTU = 1500;
 
@@ -130,22 +128,6 @@ static void enc_worker_thread(void *param) {
     }
 }
 
-extern "C" void enc28j60_irq_callback(uint gpio, uint32_t events) {
-    static bool state = 1;
-    gpio_put(RED_LED, state);
-    state = !state;
-
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-
-    // Give a semaphore for irq_loop
-    xSemaphoreGiveFromISR(irq_loop_sem, &xHigherPriorityTaskWoken);
-    gpio_acknowledge_irq(gpio, events);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-
-    // Acknowledge the interrupt
-    return;
-}
-
 err_t enc_driver_os_init() {
 
     constexpr uint8_t MISO_PIN = 16;
@@ -172,14 +154,7 @@ err_t enc_driver_os_init() {
     while (!eth_driver.is_link_up())
         ;
 
-// Define your IP address, netmask, and gateway
-#define IP_ADDR "10.30.113.199"
-#define NETMASK "255.255.255.0"
-#define GATEWAY "10.30.113.1"
-
     ip4_addr_t ipaddr, netmask, gw;
-
-    // Convert IP strings to ip4_addr_t
     IP4_ADDR(&ipaddr, 10, 30, 113, 199);
     IP4_ADDR(&netmask, 255, 255, 255, 0);
     IP4_ADDR(&gw, 10, 30, 113, 1);
@@ -228,23 +203,14 @@ err_t enc_driver_os_init() {
                     &irq_loop_task_handle) != pdPASS) {
         return ERR_ABRT;
     }
-
-    gpio_init(RED_LED);
-    gpio_set_dir(RED_LED, GPIO_OUT);
-
-#define IRQ_GPIO 22
-    gpio_init(IRQ_GPIO);
-    gpio_set_dir(IRQ_GPIO, GPIO_IN);
-    gpio_pull_up(IRQ_GPIO);
-    // gpio_disable_pulls(IRQ_GPIO);
-    gpio_set_irq_enabled_with_callback(IRQ_GPIO, GPIO_IRQ_EDGE_FALL, true, &enc28j60_irq_callback);
-
+    
 #if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1
     vTaskCoreAffinitySet(enc_worker_task_handle, NETWORKING_CORE_ID);
     vTaskCoreAffinitySet(irq_loop_task_handle, NETWORKING_CORE_ID);
 #endif
 
     xSemaphoreGive(worker_sem);
+    eth_driver.enable_interupts();
 
     return ERR_OK;
 }
