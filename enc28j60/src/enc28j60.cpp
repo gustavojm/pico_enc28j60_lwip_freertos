@@ -30,8 +30,6 @@ void enc28j60::irq_loop() {
 
     while (true) {
         if (xSemaphoreTake(irq_loop_sem, portMAX_DELAY) == pdPASS) {
-            printf("I");
-
             int intflags, loop;
             /* disable further interrupts */
             write_op(ENC28J60_BIT_FIELD_CLR, EIE, EIE_INTIE);
@@ -55,7 +53,7 @@ void enc28j60::irq_loop() {
             if (((intflags & EIR_TXIF) != 0) && ((intflags & EIR_TXERIF) == 0)) {
                 bool err = false;
                 loop++;
-                // printf("intTX(%d)\n", loop);
+                printf("intTX(%d)\n", loop);
 
                 if (read_reg(ESTAT) & ESTAT_TXABRT) {
                     // printf("Tx Error (aborted)\n");
@@ -74,6 +72,7 @@ void enc28j60::irq_loop() {
                 // enc28j60_read_tsv(priv, tsv);
                 //  if (netif_msg_tx_err(priv))
                 //  	enc28j60_dump_tsv(priv, "Tx Error", tsv);
+                    printf("TX Error");
                 /* Reset TX logic */
                 lock();
                 write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_TXRST);
@@ -102,21 +101,13 @@ void enc28j60::irq_loop() {
                 printf("intRXErr(%d)\n", loop);
                 /* Check free FIFO space to flag RX overrun */
                 if (get_free_rxfifo() <= 0) {
-                    // printf("RX Overrun\n");
+                    printf("RX Overrun\n");
                 }
                 write_op(ENC28J60_BIT_FIELD_CLR, EIR, EIR_RXERIF); // should be locked
             }
             /* RX handler */
-            printf("R");
-
-            int pk_counter, ret;
-
-            pk_counter = read_reg(EPKTCNT);
-            ret = pk_counter;
+            int pk_counter = read_reg(EPKTCNT);
             while (pk_counter-- > 0) {
-                // hw_rx();
-                // printf("handler rx");
-
                 auto packet_info = get_incoming_packet_info();
 
                 pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
@@ -261,33 +252,6 @@ void enc28j60::enable_interupts() {
     write_op(ENC28J60_BIT_FIELD_SET, ECON1, ECON1_RXEN);
     write_op(ENC28J60_BIT_FIELD_SET, EIE, EIE_INTIE); // should be locked
 
-    int pk_counter, ret;
-
-    pk_counter = read_reg(EPKTCNT);
-    ret = pk_counter;
-    while (pk_counter-- > 0) {
-        // hw_rx();
-        // printf("handler rx");
-
-        auto packet_info = get_incoming_packet_info();
-
-        pbuf *ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
-        if (ptr != nullptr) {
-            get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
-                                packet_info.byte_count);
-
-            LINK_STATS_INC(link.recv);
-#ifdef ENC_DEBUG_ON
-            printf("Received packet with len %d!\r\n",
-                    packet_info.byte_count);
-#endif
-
-            if (net_if.input(ptr, &net_if) != ERR_OK) {
-                printf("Error processing frame input\r\n");
-                pbuf_free(ptr);
-            }
-        }
-    }
     unlock();
 }
 

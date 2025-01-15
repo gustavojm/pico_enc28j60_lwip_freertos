@@ -106,6 +106,6 @@
 
 #define IP_REASSEMBLY   1       // for input packets
 #define IP_FRAG         1       // for output packets
-#define MEMP_NUM_TCPIP_MSG_INPKT    8
+#define MEMP_NUM_TCPIP_MSG_INPKT    80
 
 #endif /* __LWIPOPTS_H__ */
