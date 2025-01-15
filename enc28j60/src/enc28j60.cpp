@@ -56,7 +56,7 @@ void enc28j60::irq_loop() {
             /* TX complete handler */
             if (((intflags & EIR_TXIF) != 0) && ((intflags & EIR_TXERIF) == 0)) {
                 bool err = false;
-                printf("intTX(%d)\n");
+                //printf("intTX\n");
                 if (read_reg(ESTAT) & ESTAT_TXABRT) {
                     printf("Tx Error (aborted)\n");
                     err = true;

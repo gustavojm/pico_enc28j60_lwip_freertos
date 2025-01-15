@@ -28,8 +28,6 @@
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 constexpr size_t ETHERNET_MTU = 1500;
 
-static SemaphoreHandle_t worker_sem{};
-
 void print_pbuf_payload(struct pbuf *p) {
     struct pbuf *current = p;
     while (current != NULL) {
@@ -57,7 +55,7 @@ err_t enc_eth_packet_output(struct netif *netif, struct pbuf *p) {
         }
     }
     //
-#ifdef ENC_DEBUG_ON
+#if ENC_DEBUG_ON
     printf("Sent packet with len %d[%d]!\r\n", p->len, p->tot_len);
 #endif
     return ERR_OK;
@@ -86,47 +84,6 @@ static void netif_status_callback(struct netif *netif) {
 
 static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
 
-static void enc_worker_thread(void *param) {
-    xSemaphoreTake(worker_sem, portMAX_DELAY);
-
-    drivers::enc28j60::enc28j60 &eth_driver =
-        *static_cast<drivers::enc28j60::enc28j60 *>(net_if.state);
-    pbuf *ptr = nullptr;
-
-    while (true) {
-//         if (eth_driver.link_state_changed()) {
-//             if (eth_driver.is_link_up()) {
-//                 netif_set_link_up(&net_if);
-//                 printf("**** NETIF: LINK IS UP!\r\n");
-//             } else {
-//                 netif_set_link_down(&net_if);
-//                 printf("**** NETIF: LINK IS DOWN!\r\n");
-//             }
-//         }
-
-//         while (eth_driver.get_number_of_packets() > 0) {
-//             auto packet_info = eth_driver.get_incoming_packet_info();
-
-//             ptr = pbuf_alloc(PBUF_RAW, packet_info.byte_count, PBUF_RAM);
-//             if (ptr != nullptr) {
-//                 eth_driver.get_incoming_packet(packet_info, (uint8_t *)ptr->payload,
-//                                                packet_info.byte_count);
-
-//                 LINK_STATS_INC(link.recv);
-// #ifdef ENC_DEBUG_ON
-//                 // printf("Received packet with len %d!\r\n",
-//                 //        packet_info.byte_count);
-// #endif
-
-//                 if (net_if.input(ptr, &net_if) != ERR_OK) {
-//                     printf("Error processing frame input\r\n");
-//                     pbuf_free(ptr);
-//                 }
-//             }
-//         }
-         vTaskDelay(pdMS_TO_TICKS(20));
-    }
-}
 
 err_t enc_driver_os_init() {
 
@@ -184,17 +141,6 @@ err_t enc_driver_os_init() {
     tcpip_init(tcpip_init_done, init_sem);
     xSemaphoreTake(init_sem, portMAX_DELAY);
 
-    worker_sem = xSemaphoreCreateBinary();
-    TaskHandle_t enc_worker_task_handle{};
-
-    if (xTaskCreate(enc_worker_thread, "enc_worker", 2048, nullptr, tskIDLE_PRIORITY + 4,
-                    &enc_worker_task_handle) != pdPASS) {
-        return ERR_ABRT;
-    }
-
-    // drivers::enc28j60::enc28j60 *eth_driver =
-    //         static_cast<drivers::enc28j60::enc28j60 *>(net_if.state);
-
     irq_loop_sem = xSemaphoreCreateBinary();
 
     TaskHandle_t irq_loop_task_handle{};
@@ -204,12 +150,10 @@ err_t enc_driver_os_init() {
         return ERR_ABRT;
     }
     
-#if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1
-    vTaskCoreAffinitySet(enc_worker_task_handle, NETWORKING_CORE_ID);
+#if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1    
     vTaskCoreAffinitySet(irq_loop_task_handle, NETWORKING_CORE_ID);
 #endif
 
-    xSemaphoreGive(worker_sem);
     eth_driver.enable_interupts();
 
     return ERR_OK;
