@@ -6,8 +6,8 @@
  * URL: https://github.com/njh/EtherCard
  */
 
-#include "igpio.h"
-#include "ispi.h"
+#include "gpio.h"
+#include "spi.h"
 #include <array>
 #include <cinttypes>
 
@@ -33,10 +33,10 @@ class enc28j60 {
 
   public:
     struct Config {
-        IGpio &Cs;
-        IGpio &Rst;
+        Gpio &Cs;
+        Gpio &Rst;
         uint8_t Irq;
-        ISpi &spi;
+        Spi &spi;
         SemaphoreHandle_t mutex;
     };
     

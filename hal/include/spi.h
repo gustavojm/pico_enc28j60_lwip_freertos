@@ -1,11 +1,11 @@
 #pragma once
 
 #include "hardware/spi.h"
-#include "ispi.h"
+#include "spi.h"
 
 namespace drivers {
 
-class SpiWrapper : public ISpi {
+class Spi  {
   public:
     struct Config {
         spi_inst_t *spi_handle;
@@ -17,13 +17,13 @@ class SpiWrapper : public ISpi {
         spi_cpha_t clock_phase = SPI_CPHA_0;
         spi_order_t bit_order = SPI_MSB_FIRST;
     };
-    explicit SpiWrapper(const Config &confiig);
+    explicit Spi(const Config &confiig);
 
     bool init();
-    size_t read(uint8_t *dst, const size_t len) override;
-    bool write(const uint8_t *src, const size_t len) override;
+    size_t read(uint8_t *dst, const size_t len);
+    bool write(const uint8_t *src, const size_t len);
     bool transceive(const uint8_t *src, uint8_t *dst, const size_t tx_len,
-                    const size_t rx_len) override;
+                    const size_t rx_len);
 
   private:
     const Config &config_;

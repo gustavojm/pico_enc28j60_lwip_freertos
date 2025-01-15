@@ -1,15 +1,15 @@
 #pragma once
-#include "igpio.h"
+#include "gpio.h"
 #include <cstdint>
 
 namespace drivers {
 
-class Gpio : public IGpio {
+class Gpio {
   public:
     Gpio(uint32_t gpio_pin, uint32_t dir);
     void init();
-    void set() override;
-    void reset() override;
+    void set();
+    void reset();
 
   private:
     const uint32_t pin_;

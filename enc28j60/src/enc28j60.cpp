@@ -36,10 +36,8 @@ void enc28j60::irq_deferred_handler() {
             if ((intflags & EIR_LINKIF) != 0) {
                 if (is_link_up()) {
                     netif_set_link_up(&net_if);
-                    printf("**** NETIF: LINK IS UP!\r\n");
                 } else {
                     netif_set_link_down(&net_if);
-                    printf("**** NETIF: LINK IS DOWN!\r\n");
                 }
 
                 // enc28j60_check_link_status(ndev);
@@ -143,9 +141,10 @@ bool enc28j60::init(const MacAddress &mac_address) {
     if (config_.mutex) {
         printf(" * * * * MUTEX CREATED * * * *");
     }
+    config_.Rst.init();
+    config_.Cs.init();
 
     config_.Cs.set();
-
     config_.Rst.reset();
     vTaskDelay(pdMS_TO_TICKS(AFTER_RESET_DELAY_MS));
     config_.Rst.set();

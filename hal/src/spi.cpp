@@ -3,9 +3,9 @@
 
 namespace drivers {
 
-SpiWrapper::SpiWrapper(const Config &confiig) : config_{confiig} {}
+Spi::Spi(const Config &confiig) : config_{confiig} {}
 
-bool SpiWrapper::init() {
+bool Spi::init() {
 
     spi_init(config_.spi_handle, config_.baudrate_Hz);
     spi_set_format(config_.spi_handle, 8, config_.clock_polarization, config_.clock_phase,
@@ -18,18 +18,18 @@ bool SpiWrapper::init() {
     return true;
 }
 
-size_t SpiWrapper::read(uint8_t *dst, const size_t len) {
+size_t Spi::read(uint8_t *dst, const size_t len) {
     return spi_read_blocking(config_.spi_handle, 0, dst, len);
 }
 
-bool SpiWrapper::write(const uint8_t *src, const size_t len) {
+bool Spi::write(const uint8_t *src, const size_t len) {
     if (spi_write_blocking(config_.spi_handle, src, len) != len) {
         return false;
     }
     return true;
 }
 
-bool SpiWrapper::transceive(const uint8_t *src, uint8_t *dst, const size_t tx_len,
+bool Spi::transceive(const uint8_t *src, uint8_t *dst, const size_t tx_len,
                             const size_t rx_len) {
     if (not write(src, tx_len)) {
         return false;

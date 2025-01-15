@@ -1,4 +1,4 @@
-#include "gpio_wrapper.h"
+#include "gpio.h"
 #include "hardware/gpio.h"
 
 namespace drivers {

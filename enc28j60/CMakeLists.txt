@@ -14,4 +14,5 @@ target_link_libraries(${NAME} PRIVATE hal
                         FreeRTOS-Kernel-Heap4
                         pico_stdlib
                         pico_lwip pico_lwip_freertos
+                        hardware_spi
                     )

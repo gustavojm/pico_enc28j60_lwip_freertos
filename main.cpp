@@ -3,7 +3,7 @@
 
 #include "enc28j60.h"
 #include "enc28j60_FreeRtos_lwip.h"
-#include "gpio_wrapper.h"
+#include "gpio.h"
 #include "hardware/spi.h"
 #include "pico/stdlib.h"
 #include "spi.h"

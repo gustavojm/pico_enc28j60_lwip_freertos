@@ -17,7 +17,7 @@
 #include "task.h"
 #include <cstring>
 
-#include "gpio_wrapper.h"
+#include "gpio.h"
 #include "spi.h"
 #include "utils.h"
 
@@ -27,14 +27,21 @@
 
 constexpr uint32_t NETWORKING_CORE_ID = 1 << 1; // pin all networking functions to core1
 
-constexpr drivers::enc28j60::MacAddress mac{0x0a, 0xbd, 0x7d, 0x95, 0xd3, 0xa5};
 static void tcpip_init_done(void *arg) { xSemaphoreGive(static_cast<SemaphoreHandle_t>(arg)); }
 
 static void netif_status_callback(struct netif *netif) {
-    printf("netif status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
+    printf("NETIF status changed %s\n", ip4addr_ntoa(netif_ip4_addr(netif)));
 }
 
-static void netif_link_callback(struct netif *netif) { printf("netif link changed\n"); }
+static void netif_link_callback(struct netif *netif) {
+    drivers::enc28j60 *me = static_cast<drivers::enc28j60 *>(netif->state);
+    printf("NETIF link changed: ");
+    if (me->is_link_up()) {
+        printf("LINK IS UP!\n");
+    } else {
+        printf("LINK IS DOWN!\n");
+    }
+}
 
 err_t enc28j60_driver_os_init() {
 
@@ -45,16 +52,15 @@ err_t enc28j60_driver_os_init() {
 
     static drivers::Gpio EncRstPin{21, GPIO_OUT};
     static drivers::Gpio EncCsPin{17, GPIO_OUT};
-    static drivers::SpiWrapper::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
+    static drivers::Spi::Config spi0Config{spi0, CLK_PIN, MOSI_PIN, MISO_PIN, 25 * 1000000};
 
-    EncRstPin.init();
-    EncCsPin.init();
-
-    static drivers::SpiWrapper spi0_{spi0Config};
+    static drivers::Spi spi0_{spi0Config};
     spi0_.init();
 
     static drivers::enc28j60::Config EncConfig{EncCsPin, EncRstPin, ENC_IRQ, spi0_};
     static drivers::enc28j60 eth_driver{EncConfig};
+    constexpr drivers::enc28j60::MacAddress mac{0x0a, 0xbd, 0x7d, 0x95, 0xd3, 0xa5};
+
     if (!eth_driver.init(mac)) {
         hal::panic();
     }
@@ -96,8 +102,8 @@ err_t enc28j60_driver_os_init() {
                     &irq_loop_task_handle) != pdPASS) {
         return ERR_ABRT;
     }
-    
-#if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1    
+
+#if configUSE_CORE_AFFINITY && configNUMBER_OF_CORES > 1
     vTaskCoreAffinitySet(irq_loop_task_handle, NETWORKING_CORE_ID);
 #endif
 
