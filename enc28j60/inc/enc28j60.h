@@ -15,6 +15,7 @@
 #include "lwip/err.h"
 #include "lwip/netif.h"
 #include "semphr.h"
+#include "enc28j60_registers.h"
 
 #include <cinttypes>
 
@@ -101,6 +102,8 @@ class enc28j60 {
     uint8_t current_register_bank;
     uint16_t next_packet_pointer;
     bool current_link_state;
+    void read_tsv(uint8_t tsv[TSV_SIZE]);
+    void dump_tsv(const char *msg, uint8_t tsv[TSV_SIZE]);
 
   public:
     int wait_phy_ready();

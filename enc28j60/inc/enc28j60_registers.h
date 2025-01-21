@@ -26,7 +26,7 @@ constexpr uint8_t ERXRDPT = (0x0C | 0x00);
 constexpr uint8_t EDMAST = (0x10 | 0x00);
 constexpr uint8_t EDMAND = (0x12 | 0x00);
 constexpr uint8_t EDMACS = (0x16 | 0x00);
-constexpr uint8_t ERXWRPT = (0x0E|0x00);
+constexpr uint8_t ERXWRPT = (0x0E | 0x00);
 
 // Bank 1 registers
 constexpr uint8_t EHT0 = (0x00 | 0x20);
@@ -193,11 +193,10 @@ constexpr uint16_t PHCON2_HDLDIS = 0x0100;
 
 /* ENC28J60 PHY PHIE Register Bit Definitions */
 constexpr uint8_t PHIE_PLNKIE = (1 << 4);
-constexpr uint8_t PHIE_PGEIE  = (1 << 1);
+constexpr uint8_t PHIE_PGEIE = (1 << 1);
 /* ENC28J60 PHY PHIR Register Bit Definitions */
 constexpr uint8_t PHIR_PLNKIF = (1 << 4);
-constexpr uint8_t PHIR_PGEIF  = (1 << 1);
-
+constexpr uint8_t PHIR_PGEIF = (1 << 1);
 
 // ENC28J60 Packet Control Byte Bit Definitions
 constexpr uint16_t PKTCTRL_PHUGEEN = 0x08;
@@ -214,5 +213,31 @@ constexpr uint8_t ENC28J60_BIT_FIELD_SET = 0x80;
 constexpr uint8_t ENC28J60_BIT_FIELD_CLR = 0xA0;
 constexpr uint8_t ENC28J60_SOFT_RESET = 0xFF;
 constexpr uint8_t ENC_ADDR_MASK = 0x1f;
+
+/* ENC28J60 Transmit Status Vector */
+constexpr uint8_t TSV_TXBYTECNT = 0;
+constexpr uint8_t TSV_TXCOLLISIONCNT = 16;
+constexpr uint8_t TSV_TXCRCERROR = 20;
+constexpr uint8_t TSV_TXLENCHKERROR = 21;
+constexpr uint8_t TSV_TXLENOUTOFRANGE = 22;
+constexpr uint8_t TSV_TXDONE = 23;
+constexpr uint8_t TSV_TXMULTICAST = 24;
+constexpr uint8_t TSV_TXBROADCAST = 25;
+constexpr uint8_t TSV_TXPACKETDEFER = 26;
+constexpr uint8_t TSV_TXEXDEFER = 27;
+constexpr uint8_t TSV_TXEXCOLLISION = 28;
+constexpr uint8_t TSV_TXLATECOLLISION = 29;
+constexpr uint8_t TSV_TXGIANT = 30;
+constexpr uint8_t TSV_TXUNDERRUN = 31;
+constexpr uint8_t TSV_TOTBYTETXONWIRE = 32;
+constexpr uint8_t TSV_TXCONTROLFRAME = 48;
+constexpr uint8_t TSV_TXPAUSEFRAME = 49;
+constexpr uint8_t TSV_BACKPRESSUREAPP = 50;
+constexpr uint8_t TSV_TXVLANTAGFRAME = 51;
+constexpr uint8_t TSV_SIZE = 7;
+
+#define TSV_BYTEOF(x)((x) / 8)
+#define TSV_BITMASK(x) (1 << ((x) % 8))
+#define TSV_GETBIT(x, y) (((x)[TSV_BYTEOF(y)] & TSV_BITMASK(y)) ? 1 : 0)
 
 constexpr uint8_t MAX_TX_RETRYCOUNT = 16;
